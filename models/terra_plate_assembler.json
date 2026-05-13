@@ -1,0 +1,170 @@
+{
+	"format_version": "1.21.11",
+	"credit": "白雏菊 (Spectranthemum) 的十字模型 - 适用于Blockbench",
+	"parent": "block/block",
+	"textures": {
+		"outside": "appliedenergistics2:blocks/molecular_assembler",
+		"particle": "botania:blocks/flower_func_spectranthemum"
+	},
+	"elements": [
+		{
+			"name": "Shell",
+			"from": [0, 0, 0],
+			"to": [16, 16, 16],
+			"shade": false,
+			"faces": {
+				"north": {"uv": [0, 0, 16, 16], "texture": "#outside", "cullface": "north"},
+				"east": {"uv": [0, 0, 16, 16], "texture": "#outside", "cullface": "east"},
+				"south": {"uv": [0, 0, 16, 16], "texture": "#outside", "cullface": "south"},
+				"west": {"uv": [0, 0, 16, 16], "texture": "#outside", "cullface": "west"},
+				"up": {"uv": [0, 0, 16, 16], "texture": "#outside", "cullface": "up"},
+				"down": {"uv": [0, 0, 16, 16], "texture": "#outside", "cullface": "down"}
+			}
+		},
+		{
+			"name": "Beam Bottom North",
+			"from": [2, 0, 0],
+			"to": [14, 2, 2],
+			"shade": false,
+			"faces": {
+				"south": {"uv": [2, 14, 14, 16], "texture": "#outside"},
+				"up": {"uv": [2, 0, 14, 2], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Bottom South",
+			"from": [2, 0, 14],
+			"to": [14, 2, 16],
+			"shade": false,
+			"faces": {
+				"north": {"uv": [2, 14, 14, 16], "texture": "#outside"},
+				"up": {"uv": [2, 14, 14, 16], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Top North",
+			"from": [2, 14, 0],
+			"to": [14, 16, 2],
+			"shade": false,
+			"faces": {
+				"south": {"uv": [2, 0, 14, 2], "texture": "#outside"},
+				"down": {"uv": [2, 14, 14, 16], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Top South",
+			"from": [2, 14, 14],
+			"to": [14, 16, 16],
+			"shade": false,
+			"faces": {
+				"north": {"uv": [2, 0, 14, 2], "texture": "#outside"},
+				"down": {"uv": [2, 0, 14, 2], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Bottom West",
+			"from": [0, 0, 0],
+			"to": [2, 2, 16],
+			"shade": false,
+			"faces": {
+				"east": {"uv": [0, 14, 16, 16], "texture": "#outside"},
+				"up": {"uv": [0, 0, 2, 16], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Bottom East",
+			"from": [14, 0, 0],
+			"to": [16, 2, 16],
+			"shade": false,
+			"faces": {
+				"west": {"uv": [0, 14, 16, 16], "texture": "#outside"},
+				"up": {"uv": [14, 0, 16, 16], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Top West",
+			"from": [0, 14, 0],
+			"to": [2, 16, 16],
+			"shade": false,
+			"faces": {
+				"east": {"uv": [0, 0, 16, 2], "texture": "#outside"},
+				"down": {"uv": [0, 0, 2, 16], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Beam Top East",
+			"from": [14, 14, 0],
+			"to": [16, 16, 16],
+			"shade": false,
+			"faces": {
+				"west": {"uv": [0, 0, 16, 2], "texture": "#outside"},
+				"down": {"uv": [14, 0, 16, 16], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Strut North West",
+			"from": [0, 2, 0],
+			"to": [2, 14, 2],
+			"shade": false,
+			"faces": {
+				"east": {"uv": [14, 2, 16, 14], "texture": "#outside"},
+				"south": {"uv": [0, 2, 2, 14], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Strut South West",
+			"from": [0, 2, 14],
+			"to": [2, 14, 16],
+			"shade": false,
+			"faces": {
+				"north": {"uv": [14, 2, 16, 14], "texture": "#outside"},
+				"east": {"uv": [0, 2, 2, 14], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Strut North East",
+			"from": [14, 2, 0],
+			"to": [16, 14, 2],
+			"shade": false,
+			"faces": {
+				"south": {"uv": [14, 2, 16, 14], "texture": "#outside"},
+				"west": {"uv": [0, 2, 2, 14], "texture": "#outside"}
+			}
+		},
+		{
+			"name": "Strut South East",
+			"from": [14, 2, 14],
+			"to": [16, 14, 16],
+			"shade": false,
+			"faces": {
+				"north": {"uv": [0, 2, 2, 14], "texture": "#outside"},
+				"west": {"uv": [14, 2, 16, 14], "texture": "#outside"}
+			}
+		},
+		{
+			"from": [3, 6, 4],
+			"to": [13, 9, 13],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, 6, 0]},
+			"faces": {
+				"north": {"uv": [0, 13, 16, 16], "texture": "#missing"},
+				"east": {"uv": [0, 13, 16, 16], "texture": "#missing"},
+				"south": {"uv": [0, 13, 16, 16], "texture": "#missing"},
+				"west": {"uv": [0, 13, 16, 16], "texture": "#missing"},
+				"up": {"uv": [0, 0, 16, 16], "texture": "#missing"},
+				"down": {"uv": [0, 0, 16, 16], "texture": "#missing"}
+			}
+		}
+	],
+	"display": {},
+	"groups": [
+		{
+			"name": "Strut South East",
+			"origin": [0, 0, 0],
+			"scope": 0,
+			"color": 0,
+			"children": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+		},
+		13
+	],
+	"Comment": "Designed by Wiiv with Cubik Studio - https://cubik.studio"
+}

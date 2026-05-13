@@ -25,6 +25,18 @@ repositories {
             includeGroup 'maven.modrinth'
         }
     }
+    // Botania Maven (BlameJared)
+    exclusiveContent {
+        forRepository {
+            maven {
+                name 'BlameJared Maven'
+                url 'https://maven.blamejared.com'
+            }
+        }
+        filter {
+            includeGroup 'vazkii.botania'
+        }
+    }
     mavenLocal() // Must be last for caching to work
 }
 
@@ -33,6 +45,18 @@ dependencies {
     runtimeOnly 'com.cleanroommc:strip-latest-forge-requirements:1.0'
     // Include OSXNarratorBlocker by default for the dev env, for M1+ Macs
     runtimeOnly 'com.cleanroommc:osxnarratorblocker:1.0'
+
+    // Botania (植物魔法) - 1.12.2 最新版本
+    // Maven: vazkii.botania:Botania from https://maven.blamejared.com
+    implementation rfg.deobf('vazkii.botania:Botania:r1.10-364.4')
+
+    // Baubles - Botania 1.12.2 前置
+    // CurseForge: https://www.curseforge.com/minecraft/mc-mods/baubles (Project ID: 227083)
+    implementation rfg.deobf('curse.maven:baubles-227083:2518667')
+
+    // Applied Energistics 2 (AE2) - 1.12.2 最新版本
+    // CurseForge: https://www.curseforge.com/minecraft/mc-mods/applied-energistics-2 (Project ID: 223794)
+    implementation rfg.deobf('curse.maven:applied-energistics-2-223794:2747063')
 
     // Example - Dependency descriptor:
     // 'com.google.code.gson:gson:2.8.6' << group: com.google.code.gson, name:gson, version:2.8.6
