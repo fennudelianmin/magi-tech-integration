@@ -1,0 +1,19 @@
+# Magi Tech Integration - English
+
+tile.magitech.livingrock_cultivator.name=Livingrock Cultivator
+tile.magitech.flower_crafting_table.name=Flower Crafting Table
+tile.magitech.rune_altar_machine.name=Rune Altar Machine
+tile.magitech.terra_plate_assembler.name=Terra Plate Assembler
+tile.magitech.elven_trade_machine.name=Elven Trade Machine
+
+item.magitech.rune_altar_core.name=Rune Altar Core
+item.magitech.terra_assembly_core.name=Terra Assembly Core
+item.magitech.elven_trade_core.name=Elven Trade Core
+
+tooltip.magitech.mana=Mana: %d / %d
+tooltip.magitech.water=Water: %d / %d mB
+tooltip.magitech.energy=Energy: %d / %d FE
+tooltip.magitech.progress=Progress: %d%%
+
+config.magitech.general=General Settings
+config.magitech.machines=Machine Settings

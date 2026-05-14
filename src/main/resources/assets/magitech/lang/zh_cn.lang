@@ -1,0 +1,22 @@
+# Magi Tech Integration - 简体中文
+# 方块
+tile.magitech.livingrock_cultivator.name=活石培育器
+tile.magitech.flower_crafting_table.name=花药台机器
+tile.magitech.rune_altar_machine.name=符文祭坛机器
+tile.magitech.terra_plate_assembler.name=泰拉凝聚器
+tile.magitech.elven_trade_machine.name=精灵交易器
+
+# 物品
+item.magitech.rune_altar_core.name=符文祭坛核心
+item.magitech.terra_assembly_core.name=泰拉凝聚核心
+item.magitech.elven_trade_core.name=精灵交易核心
+
+# 工具提示
+tooltip.magitech.mana=魔力: %d / %d
+tooltip.magitech.water=水: %d / %d mB
+tooltip.magitech.energy=能量: %d / %d FE
+tooltip.magitech.progress=进度: %d%%
+
+# 配置类别
+config.magitech.general=常规设置
+config.magitech.machines=机器设置
