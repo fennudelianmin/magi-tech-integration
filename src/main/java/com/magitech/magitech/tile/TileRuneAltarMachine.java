@@ -1,5 +1,6 @@
 package com.magitech.magitech.tile;
 
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumFacing;
@@ -13,8 +14,7 @@ import vazkii.botania.api.mana.spark.ISparkAttachable;
 import vazkii.botania.api.mana.spark.ISparkEntity;
 import vazkii.botania.api.recipe.RecipeRuneAltar;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
 
@@ -22,28 +22,132 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     public static final int ENERGY_PER_TICK = 16;
     public static final int MANA_CAPACITY = 200000;
 
-    // 槽位配置：32个输入，32个输出
     private static final int INPUT_SLOTS = 32;
     private static final int OUTPUT_SLOTS = 32;
-    private static final int TOTAL_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS; // 64
-    private static final int FIRST_OUTPUT_SLOT = INPUT_SLOTS; // 32
+    private static final int TOTAL_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS;
+    private static final int FIRST_OUTPUT_SLOT = INPUT_SLOTS;
 
     public enum State {
-        IDLE,          // 等待原料和魔力
-        CRAFTING,      // 合成中 (消耗魔力)
-        OUTPUT         // 产物输出
+        IDLE,
+        CRAFTING,
+        OUTPUT
     }
 
+    // ==================== 配方缓存 ====================
+    private static List<CachedRecipe> recipeCache = null;
+
+    static {
+        initRecipeCache();
+    }
+
+    private static void initRecipeCache() {
+        recipeCache = new ArrayList<>();
+        for (RecipeRuneAltar recipe : BotaniaAPI.runeAltarRecipes) {
+            CachedRecipe cr = new CachedRecipe();
+            cr.manaUsage = recipe.getManaUsage();
+            cr.output = recipe.getOutput().copy();
+            cr.originalRecipe = recipe;
+
+            // 解析配方输入，并合并同类物品
+            Map<ItemDefinition, Integer> merged = new HashMap<>();
+            for (Object input : recipe.getInputs()) {
+                ItemStack stack = parseInputObject(input);
+                if (stack.isEmpty()) continue;
+                ItemDefinition def = new ItemDefinition(stack);
+                merged.put(def, merged.getOrDefault(def, 0) + stack.getCount());
+            }
+
+            // 区分催化剂和非催化剂
+            for (Map.Entry<ItemDefinition, Integer> entry : merged.entrySet()) {
+                ItemStack representative = entry.getKey().exampleStack;
+                int count = entry.getValue();
+
+                boolean isCatalyst = false;
+                for (int id : OreDictionary.getOreIDs(representative)) {
+                    if (OreDictionary.getOreName(id).startsWith("rune")) {
+                        isCatalyst = true;
+                        break;
+                    }
+                }
+
+                ItemStack stack = representative.copy();
+                stack.setCount(count);
+                if (isCatalyst) {
+                    cr.catalysts.add(stack);
+                } else {
+                    cr.nonCatalysts.add(stack);
+                }
+            }
+
+            recipeCache.add(cr);
+        }
+    }
+
+    private static ItemStack parseInputObject(Object input) {
+        if (input instanceof ItemStack) {
+            return ((ItemStack) input).copy();
+        } else if (input instanceof String) {
+            List<ItemStack> ores = OreDictionary.getOres((String) input);
+            if (!ores.isEmpty()) {
+                return ores.get(0).copy();
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    static class CachedRecipe {
+        List<ItemStack> nonCatalysts = new ArrayList<>();   // 合并后的普通原料
+        List<ItemStack> catalysts = new ArrayList<>();      // 合并后的催化剂（符文）
+        ItemStack output;
+        int manaUsage;
+        RecipeRuneAltar originalRecipe; // 保留原始配方，用于输出等
+    }
+
+    static class ItemDefinition {
+        ItemStack exampleStack; // 用于展示，count=1
+        int[] oreIDs;
+
+        ItemDefinition(ItemStack stack) {
+            this.exampleStack = stack.copy();
+            this.exampleStack.setCount(1);
+            this.oreIDs = OreDictionary.getOreIDs(stack);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ItemDefinition)) return false;
+            ItemDefinition that = (ItemDefinition) o;
+            // 先精确匹配物品
+            if (ItemStack.areItemsEqual(this.exampleStack, that.exampleStack)) return true;
+            // 再检查矿物词典是否有交集
+            if (this.oreIDs.length > 0 && that.oreIDs.length > 0) {
+                for (int id1 : this.oreIDs) {
+                    for (int id2 : that.oreIDs) {
+                        if (id1 == id2) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            // 用物品基础哈希，矿物词典匹配时哈希可能碰撞，但HashMap能正确处理
+            return Item.getIdFromItem(exampleStack.getItem()) * 32768 + exampleStack.getItemDamage();
+        }
+    }
+
+    // ==================== 机器字段 ====================
     protected int mana;
     protected ISparkEntity attachedSpark;
     private State state = State.IDLE;
     private int progress;
     private RecipeRuneAltar currentRecipe;
-    private List<ItemStack> catalysts; // 催化剂物品，合成后返回
+    private List<ItemStack> catalysts;
     private int manaCost;
 
     public TileRuneAltarMachine() {
-        // 假设父类构造参数为 (输入槽数, 输出槽数, 能量容量)
         super(INPUT_SLOTS, OUTPUT_SLOTS, ENERGY_CAPACITY);
         this.mana = 0;
         this.progress = 0;
@@ -53,7 +157,6 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     @Override
     public void update() {
         if (world.isRemote) return;
-
         switch (state) {
             case IDLE:
                 tryStartCrafting();
@@ -68,59 +171,113 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
 
     private void tryStartCrafting() {
-        // 检查能量
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return;
 
-        // 收集输入槽物品
-        List<ItemStack> inputs = new ArrayList<>();
+        // 收集并合并输入槽物品
+        List<ItemStack> mergedInputs = new ArrayList<>();
         for (int i = 0; i < INPUT_SLOTS; i++) {
             ItemStack stack = itemHandler.getStackInSlot(i);
-            if (!stack.isEmpty()) {
-                inputs.add(stack.copy());
+            if (stack.isEmpty()) continue;
+            ItemStack copy = stack.copy();
+            boolean merged = false;
+            for (ItemStack existing : mergedInputs) {
+                if (ItemHandlerHelper.canItemStacksStack(existing, copy)) {
+                    int space = existing.getMaxStackSize() - existing.getCount();
+                    int toAdd = Math.min(copy.getCount(), space);
+                    existing.grow(toAdd);
+                    copy.shrink(toAdd);
+                    if (copy.isEmpty()) {
+                        merged = true;
+                        break;
+                    }
+                }
+            }
+            if (!merged && !copy.isEmpty()) {
+                mergedInputs.add(copy);
             }
         }
-        if (inputs.isEmpty()) return;
+        if (mergedInputs.isEmpty()) return;
 
-        // 创建临时Handler用于配方匹配
-        ItemStackHandler tempHandler = new ItemStackHandler(inputs.size());
-        for (int i = 0; i < inputs.size(); i++) {
-            tempHandler.setStackInSlot(i, inputs.get(i));
+        // 构建输入Map
+        Map<ItemDefinition, Integer> inputMap = new HashMap<>();
+        for (ItemStack stack : mergedInputs) {
+            ItemDefinition def = new ItemDefinition(stack);
+            inputMap.put(def, inputMap.getOrDefault(def, 0) + stack.getCount());
         }
 
-        // 查找配方
+        // 与缓存配方匹配
         currentRecipe = null;
-        for (RecipeRuneAltar recipe : BotaniaAPI.runeAltarRecipes) {
-            if (recipe.matches(tempHandler)) {
-                currentRecipe = recipe;
-                manaCost = recipe.getManaUsage();
-                break;
-            }
-        }
-        if (currentRecipe == null) return;
-
-        // 检查魔力
-        if (mana < manaCost) return;
-
-        // 识别催化剂（矿物名以"rune"开头）
         catalysts.clear();
-        for (int i = 0; i < inputs.size(); i++) {
-            ItemStack stack = inputs.get(i);
-            boolean isCatalyst = false;
-            for (int id : OreDictionary.getOreIDs(stack)) {
-                String oreName = OreDictionary.getOreName(id);
-                if (oreName.startsWith("rune")) {
-                    isCatalyst = true;
+        CachedRecipe matchedCache = null;
+
+        for (CachedRecipe cr : recipeCache) {
+            // 检查魔力
+            if (mana < cr.manaUsage) continue;
+
+            Map<ItemDefinition, Integer> remaining = new HashMap<>(inputMap);
+
+            // 检查非催化剂数量是否足够
+            boolean enough = true;
+            for (ItemStack need : cr.nonCatalysts) {
+                ItemDefinition def = new ItemDefinition(need);
+                int have = remaining.getOrDefault(def, 0);
+                if (have < need.getCount()) {
+                    enough = false;
+                    break;
+                }
+                remaining.put(def, have - need.getCount());
+            }
+            if (!enough) continue;
+
+            // 检查催化剂数量是否足够
+            for (ItemStack cat : cr.catalysts) {
+                ItemDefinition def = new ItemDefinition(cat);
+                int have = remaining.getOrDefault(def, 0);
+                if (have < cat.getCount()) {
+                    enough = false;
+                    break;
+                }
+                remaining.put(def, have - cat.getCount());
+            }
+            if (!enough) continue;
+
+            // 扣除后，剩余物品只能是催化剂（允许玩家多放符文）
+            boolean hasInvalid = false;
+            for (Map.Entry<ItemDefinition, Integer> entry : remaining.entrySet()) {
+                if (entry.getValue() <= 0) continue;
+                boolean isCatalyst = false;
+                for (int id : OreDictionary.getOreIDs(entry.getKey().exampleStack)) {
+                    if (OreDictionary.getOreName(id).startsWith("rune")) {
+                        isCatalyst = true;
+                        break;
+                    }
+                }
+                if (!isCatalyst) {
+                    hasInvalid = true;
                     break;
                 }
             }
-            if (isCatalyst) {
-                catalysts.add(stack.copy());
-            }
+            if (hasInvalid) continue;
+
+            // 匹配成功
+            currentRecipe = cr.originalRecipe;
+            manaCost = cr.manaUsage;
+            matchedCache = cr;
+            break;
         }
 
-        // 模拟将产物和所有催化剂插入输出槽区域，检查空间是否足够
+        if (currentRecipe == null) return;
+        System.out.println("匹配到的配方：" + currentRecipe);
+
+        // 记录催化剂列表（从缓存复制，用于输出时移动）
+        catalysts.clear();
+        for (ItemStack cat : matchedCache.catalysts) {
+            catalysts.add(cat.copy());
+        }
+
+        // 检查输出空间
         if (!canFitOutputs(currentRecipe.getOutput(), catalysts)) {
-            currentRecipe = null; // 空间不足，放弃本次匹配
+            currentRecipe = null;
             return;
         }
 
@@ -128,36 +285,22 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         progress = 0;
     }
 
-    /**
-     * 模拟插入产物和催化剂列表，检查输出槽是否有足够空间。
-     */
     private boolean canFitOutputs(ItemStack output, List<ItemStack> catalysts) {
-        // 创建临时输出槽视图（仅用于模拟）
         ItemStackHandler tempOutput = new ItemStackHandler(OUTPUT_SLOTS);
         for (int i = 0; i < OUTPUT_SLOTS; i++) {
             tempOutput.setStackInSlot(i, itemHandler.getStackInSlot(FIRST_OUTPUT_SLOT + i).copy());
         }
-
-        // 模拟插入产物
         ItemStack remaining = ItemHandlerHelper.insertItemStacked(tempOutput, output.copy(), true);
-        if (!remaining.isEmpty()) {
-            return false; // 产物无法完全放入
-        }
-
-        // 模拟插入每个催化剂
-        for (ItemStack catalyst : catalysts) {
-            remaining = ItemHandlerHelper.insertItemStacked(tempOutput, catalyst.copy(), true);
-            if (!remaining.isEmpty()) {
-                return false; // 催化剂无法完全放入
-            }
+        if (!remaining.isEmpty()) return false;
+        for (ItemStack cat : catalysts) {
+            remaining = ItemHandlerHelper.insertItemStacked(tempOutput, cat.copy(), true);
+            if (!remaining.isEmpty()) return false;
         }
         return true;
     }
 
     private void doCrafting() {
         if (!consumeEnergy()) return;
-
-        // 每tick消耗的魔力，保证约3秒（60 ticks）完成
         int manaPerTick = Math.max(1, manaCost / 60);
         if (mana < manaPerTick) return;
 
@@ -165,11 +308,10 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         progress += manaPerTick;
 
         if (progress >= manaCost) {
-            // 消耗所有非催化剂原料
+            // 消耗所有非催化剂（此时输入中非催化剂数量必定与配方完全一致，直接清空即可）
             for (int i = 0; i < INPUT_SLOTS; i++) {
                 ItemStack stack = itemHandler.getStackInSlot(i);
                 if (stack.isEmpty()) continue;
-
                 boolean isCatalyst = false;
                 for (int id : OreDictionary.getOreIDs(stack)) {
                     if (OreDictionary.getOreName(id).startsWith("rune")) {
@@ -187,26 +329,20 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
 
     private void doOutput() {
-        // 临时输出槽视图（用于实际插入）
         ItemStackHandler outputView = new ItemStackHandler(OUTPUT_SLOTS);
         for (int i = 0; i < OUTPUT_SLOTS; i++) {
             outputView.setStackInSlot(i, itemHandler.getStackInSlot(FIRST_OUTPUT_SLOT + i));
         }
 
-        // 插入产物
         ItemStack result = ItemHandlerHelper.insertItemStacked(outputView, currentRecipe.getOutput().copy(), false);
         if (!result.isEmpty()) {
-            // 理论上不应发生（开始前已模拟检查），若发生则重置，避免物品丢失
             resetState();
             return;
         }
 
-        // 将输入槽中的催化剂全部移入输出区域
         for (int i = 0; i < INPUT_SLOTS; i++) {
             ItemStack stack = itemHandler.getStackInSlot(i);
             if (stack.isEmpty()) continue;
-
-            // 确认是催化剂（此处应该都是，非催化剂已被清空）
             boolean isCatalyst = false;
             for (int id : OreDictionary.getOreIDs(stack)) {
                 if (OreDictionary.getOreName(id).startsWith("rune")) {
@@ -215,13 +351,10 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
                 }
             }
             if (!isCatalyst) continue;
-
-            // 尝试插入输出区，剩下的放回输入槽（空间不足时保护物品）
             ItemStack remaining = ItemHandlerHelper.insertItemStacked(outputView, stack.copy(), false);
-            itemHandler.setStackInSlot(i, remaining); // 空或剩余部分
+            itemHandler.setStackInSlot(i, remaining);
         }
 
-        // 将临时视图写回实际输出槽
         for (int i = 0; i < OUTPUT_SLOTS; i++) {
             itemHandler.setStackInSlot(FIRST_OUTPUT_SLOT + i, outputView.getStackInSlot(i));
         }
@@ -244,126 +377,68 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         markDirty();
     }
 
-    // ==================== 侧面能力（自动化限制） ====================
+    // ==================== Capability ====================
     @Override
     public <T> T getCapability(Capability<T> capability, EnumFacing facing) {
         if (capability == CapabilityItemHandler.ITEM_HANDLER_CAPABILITY) {
             if (facing == EnumFacing.DOWN) {
-                // 底面：只能提取输出槽
                 return CapabilityItemHandler.ITEM_HANDLER_CAPABILITY.cast(new OutputOnlyHandler());
             } else {
-                // 其他面：只能插入输入槽
                 return CapabilityItemHandler.ITEM_HANDLER_CAPABILITY.cast(new InputOnlyHandler());
             }
         }
         return super.getCapability(capability, facing);
     }
 
-    /**
-     * 仅暴露输出槽区域，且只能提取不能插入。
-     */
     private class OutputOnlyHandler extends ItemStackHandler {
-        OutputOnlyHandler() {
-            super(OUTPUT_SLOTS);
-        }
-
-        @Override
-        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-            return stack; // 拒绝插入
-        }
-
-        @Override
-        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+        OutputOnlyHandler() { super(OUTPUT_SLOTS); }
+        @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) { return stack; }
+        @Override public ItemStack extractItem(int slot, int amount, boolean simulate) {
             if (slot < 0 || slot >= OUTPUT_SLOTS) return ItemStack.EMPTY;
             return itemHandler.extractItem(FIRST_OUTPUT_SLOT + slot, amount, simulate);
         }
-
-        @Override
-        public ItemStack getStackInSlot(int slot) {
-            if (slot >= 0 && slot < OUTPUT_SLOTS) {
-                return itemHandler.getStackInSlot(FIRST_OUTPUT_SLOT + slot);
-            }
+        @Override public ItemStack getStackInSlot(int slot) {
+            if (slot >= 0 && slot < OUTPUT_SLOTS) return itemHandler.getStackInSlot(FIRST_OUTPUT_SLOT + slot);
             return ItemStack.EMPTY;
-        }
-
-        @Override
-        public int getSlots() {
-            return OUTPUT_SLOTS;
         }
     }
 
-    /**
-     * 仅暴露输入槽区域，且只能插入不能提取。
-     */
     private class InputOnlyHandler extends ItemStackHandler {
-        InputOnlyHandler() {
-            super(INPUT_SLOTS);
-        }
-
-        @Override
-        public ItemStack extractItem(int slot, int amount, boolean simulate) {
-            return ItemStack.EMPTY; // 禁止提取
-        }
-
-        @Override
-        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+        InputOnlyHandler() { super(INPUT_SLOTS); }
+        @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return ItemStack.EMPTY; }
+        @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
             if (slot < 0 || slot >= INPUT_SLOTS) return stack;
             return itemHandler.insertItem(slot, stack, simulate);
         }
-
-        @Override
-        public ItemStack getStackInSlot(int slot) {
-            if (slot >= 0 && slot < INPUT_SLOTS) {
-                return itemHandler.getStackInSlot(slot);
-            }
+        @Override public ItemStack getStackInSlot(int slot) {
+            if (slot >= 0 && slot < INPUT_SLOTS) return itemHandler.getStackInSlot(slot);
             return ItemStack.EMPTY;
-        }
-
-        @Override
-        public int getSlots() {
-            return INPUT_SLOTS;
         }
     }
 
-    // ==================== Botania 魔力接口 ====================
-    @Override
-    public int getCurrentMana() { return mana; }
-
-    @Override
-    public boolean isFull() { return mana >= MANA_CAPACITY; }
-
-    @Override
-    public void recieveMana(int mana) {
+    // ==================== Botania 接口 ====================
+    @Override public int getCurrentMana() { return mana; }
+    @Override public boolean isFull() { return mana >= MANA_CAPACITY; }
+    @Override public void recieveMana(int mana) {
         this.mana = Math.min(MANA_CAPACITY, this.mana + mana);
         markDirty();
     }
-
-    @Override
-    public boolean canRecieveManaFromBursts() { return !isFull(); }
+    @Override public boolean canRecieveManaFromBursts() { return !isFull(); }
 
     // ==================== ISparkAttachable ====================
-    @Override
-    public boolean canAttachSpark(ItemStack stack) { return attachedSpark == null; }
+    @Override public boolean canAttachSpark(ItemStack stack) { return attachedSpark == null; }
+    @Override public void attachSpark(ISparkEntity entity) { this.attachedSpark = entity; }
+    @Override public ISparkEntity getAttachedSpark() { return attachedSpark; }
+    @Override public boolean areIncomingTranfersDone() { return isFull(); }
+    @Override public int getAvailableSpaceForMana() { return Math.max(0, MANA_CAPACITY - mana); }
 
-    @Override
-    public void attachSpark(ISparkEntity entity) { this.attachedSpark = entity; }
-
-    @Override
-    public ISparkEntity getAttachedSpark() { return attachedSpark; }
-
-    @Override
-    public boolean areIncomingTranfersDone() { return isFull(); }
-
-    @Override
-    public int getAvailableSpaceForMana() { return Math.max(0, MANA_CAPACITY - mana); }
-
-    // ==================== 客户端/服务端状态获取 ====================
+    // ==================== 客户端/服务端状态 ====================
     public State getState() { return state; }
     public int getProgress() { return progress; }
     public int getManaCost() { return manaCost; }
     public int getMaxMana() { return MANA_CAPACITY; }
 
-    // ==================== NBT 持久化 ====================
+    // ==================== NBT ====================
     @Override
     protected void readCustomNBT(NBTTagCompound compound) {
         mana = compound.getInteger("mana");

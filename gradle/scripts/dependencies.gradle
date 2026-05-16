@@ -37,6 +37,10 @@ repositories {
             includeGroup 'vazkii.botania'
         }
     }
+    // Local flatDir for Ender IO / EnderCore (from Modrinth CDN)
+    flatDir {
+        dirs 'libs'
+    }
     mavenLocal() // Must be last for caching to work
 }
 
@@ -61,6 +65,22 @@ dependencies {
     // ExtraBotany (额外植物学) - Botania 扩展模组
     // CurseForge: https://www.curseforge.com/minecraft/mc-mods/extrabotany (Project ID: 299086)
     implementation rfg.deobf('curse.maven:extrabotany-299086:3112313')
+
+    // EnderCore - Ender IO 1.12.2 前置 (从 CurseMaven 获取)
+    // CurseForge: https://www.curseforge.com/minecraft/mc-mods/endercore (Project ID: 231868)
+    implementation rfg.deobf('curse.maven:endercore-231868:4671384')
+
+    // EnderCore Coremod - 从 EnderCore 中提取的 core.jar，包含 FMLCorePlugin
+    // CurseForge 打包后 coremod 放在 ContainedDeps 中，开发环境需单独添加
+    implementation rfg.deobf(':EnderCore-1.12.2-0.5.78-core')
+
+    // AutoConfig / AutoSave - Ender IO 的嵌入式依赖 (从 EnderIO 中提取)
+    implementation rfg.deobf(':AutoConfig-1.12.2-1.0.2')
+    implementation rfg.deobf(':AutoSave-1.12.2-1.0.11')
+
+    // Ender IO - 1.12.2 大型科技模组 (从 Modrinth CDN 获取)
+    // Modrinth: https://modrinth.com/mod/enderio/version/5.3.72
+    implementation rfg.deobf(':EnderIO-1.12.2-5.3.72')
 
     // Example - Dependency descriptor:
     // 'com.google.code.gson:gson:2.8.6' << group: com.google.code.gson, name:gson, version:2.8.6
