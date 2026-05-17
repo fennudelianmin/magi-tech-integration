@@ -4,6 +4,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.items.CapabilityItemHandler;
@@ -21,22 +22,19 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
     public static final int ENERGY_PER_TICK = 32;
     public static final int MANA_CAPACITY = 1000000;
     public static final int MANA_COST_PER_CRAFT = 500000;
-    private static final int TICKS_PER_CRAFT = 120; // 大约6秒
+    private static final int TICKS_PER_CRAFT = 120;
 
     // 槽位索引
-    private static final int SLOT_MANASTEEL = 0;
-    private static final int SLOT_MANAPEARL = 1;
-    private static final int SLOT_MANADIAMOND = 2;
-    private static final int SLOT_OUTPUT = 3;
-    private static final int TOTAL_SLOTS = 4;
+    private static final int INPUT_SLOTS = 3; // 三个输入槽，可任意混合
+    private static final int SLOT_OUTPUT = 3; // 输出槽固定第4个
 
-    // 缓存物品实例
-    private static Item MANASTEEL;
-    private static Item MANAPEARL;
-    private static Item MANADIAMOND;
-    private static Item TERRASTEEL;
+    // 物品与元数据常量
+    private static Item MANA_RESOURCE = null;
+    private static final int META_MANASTEEL = 0;
+    private static final int META_MANAPEARL = 1;
+    private static final int META_MANADIAMOND = 2;
+    private static final int META_TERRASTEEL = 4;
 
-    // 状态枚举
     public enum State {
         IDLE,
         CRAFTING
@@ -45,28 +43,31 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
     protected int mana;
     protected ISparkEntity attachedSpark;
     private State state = State.IDLE;
-    private int progress;          // 0-100 百分比
-    private int manaConsumed;      // 已消耗魔力
+    private int progress;
+    private int manaConsumed;
 
-    // 面限制的包装器
+    // 面限制包装器
     private final IItemHandler inputHandler = new InputItemHandler();
     private final IItemHandler outputHandler = new OutputItemHandler();
 
     public TileTerraPlateAssembler() {
-        super(3, 1, ENERGY_CAPACITY); // 3个输入槽，1个输出槽
+        super(INPUT_SLOTS, 1, ENERGY_CAPACITY); // 3输入，1输出
         this.mana = 0;
-        // 初始化物品引用
-        if (MANASTEEL == null) {
-            MANASTEEL = Item.getByNameOrId("botania:manasteel");
-            MANAPEARL = Item.getByNameOrId("botania:manapearl");
-            MANADIAMOND = Item.getByNameOrId("botania:manadiamond");
-            TERRASTEEL = Item.getByNameOrId("botania:terrasteel");
+    }
+
+    private static void initItems() {
+        if (MANA_RESOURCE == null) {
+            MANA_RESOURCE = Item.REGISTRY.getObject(new ResourceLocation("botania", "manaresource"));
+            if (MANA_RESOURCE == null) {
+                System.err.println("[TileTerraPlateAssembler] CRITICAL: 'botania:manaresource' not found! Crafting disabled.");
+            }
         }
     }
 
     @Override
     public void update() {
         if (world.isRemote) return;
+        initItems();
 
         switch (state) {
             case IDLE:
@@ -78,28 +79,54 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
         }
     }
 
+    // 统计所有输入槽中指定元数据的物品总数
+    private int countMaterial(int meta) {
+        int count = 0;
+        for (int i = 0; i < INPUT_SLOTS; i++) {
+            ItemStack stack = itemHandler.getStackInSlot(i);
+            if (isMaterial(stack, meta)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    // 从输入槽消耗指定元数据物品1个
+    private boolean consumeOne(int meta) {
+        for (int i = 0; i < INPUT_SLOTS; i++) {
+            ItemStack stack = itemHandler.getStackInSlot(i);
+            if (isMaterial(stack, meta)) {
+                stack.shrink(1);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 判断物品是否是指定元数据的魔力资源
+    private boolean isMaterial(ItemStack stack, int meta) {
+        return !stack.isEmpty() && stack.getItem() == MANA_RESOURCE && stack.getItemDamage() == meta;
+    }
+
     private void tryStartCrafting() {
-        // 检查产物是否已定义
-        if (TERRASTEEL == null) return;
+        if (MANA_RESOURCE == null) return;
 
-        // 检查中心材料：三种各至少1个
-        ItemStack manasteel = itemHandler.getStackInSlot(SLOT_MANASTEEL);
-        ItemStack manapearl = itemHandler.getStackInSlot(SLOT_MANAPEARL);
-        ItemStack manadiamond = itemHandler.getStackInSlot(SLOT_MANADIAMOND);
-        if (manasteel.isEmpty() || manapearl.isEmpty() || manadiamond.isEmpty()) return;
-        if (manasteel.getCount() < 1 || manapearl.getCount() < 1 || manadiamond.getCount() < 1) return;
+        // 统计三种材料总数，各至少1个
+        if (countMaterial(META_MANASTEEL) < 1) return;
+        if (countMaterial(META_MANAPEARL) < 1) return;
+        if (countMaterial(META_MANADIAMOND) < 1) return;
 
-        // 检查魔力
+        // 检查魔力与能量
         if (mana < MANA_COST_PER_CRAFT) return;
-        // 检查能量
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return;
-        // 检查输出槽是否可放入产物
-        ItemStack outputStack = itemHandler.getStackInSlot(SLOT_OUTPUT);
-        ItemStack product = new ItemStack(TERRASTEEL);
-        if (!outputStack.isEmpty()) {
-            if (!ItemHandlerHelper.canItemStacksStack(outputStack, product)
-                || outputStack.getCount() + 1 > outputStack.getMaxStackSize()) {
-                return; // 输出满，不能开始
+
+        // 检查输出槽
+        ItemStack output = itemHandler.getStackInSlot(SLOT_OUTPUT);
+        ItemStack product = new ItemStack(MANA_RESOURCE, 1, META_TERRASTEEL);
+        if (!output.isEmpty()) {
+            if (!ItemHandlerHelper.canItemStacksStack(output, product) ||
+                    output.getCount() + 1 > output.getMaxStackSize()) {
+                return; // 输出满
             }
         }
 
@@ -110,64 +137,55 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
     }
 
     private void doCrafting() {
-        if (TERRASTEEL == null) {
+        if (MANA_RESOURCE == null) {
             state = State.IDLE;
             return;
         }
 
-        // 检查材料是否依旧满足（防止意外，不过输入面只进不出，通常不会减少）
-        ItemStack manasteel = itemHandler.getStackInSlot(SLOT_MANASTEEL);
-        ItemStack manapearl = itemHandler.getStackInSlot(SLOT_MANAPEARL);
-        ItemStack manadiamond = itemHandler.getStackInSlot(SLOT_MANADIAMOND);
-        if (manasteel.getCount() < 1 || manapearl.getCount() < 1 || manadiamond.getCount() < 1) {
-            // 材料不足，暂停（实际不会发生）
-            return;
+        // 再次确认材料充足
+        if (countMaterial(META_MANASTEEL) < 1 ||
+                countMaterial(META_MANAPEARL) < 1 ||
+                countMaterial(META_MANADIAMOND) < 1) {
+            return; // 材料意外不足，暂停
         }
 
-        // 检查输出槽是否可接收产物（若满则暂停）
-        ItemStack outputStack = itemHandler.getStackInSlot(SLOT_OUTPUT);
-        ItemStack product = new ItemStack(TERRASTEEL);
-        if (!outputStack.isEmpty()) {
-            if (!ItemHandlerHelper.canItemStacksStack(outputStack, product)
-                || outputStack.getCount() + 1 > outputStack.getMaxStackSize()) {
-                // 输出满，暂停（不消耗能量/魔力，进度保持）
-                return;
+        // 检查输出空间
+        ItemStack output = itemHandler.getStackInSlot(SLOT_OUTPUT);
+        ItemStack product = new ItemStack(MANA_RESOURCE, 1, META_TERRASTEEL);
+        if (!output.isEmpty()) {
+            if (!ItemHandlerHelper.canItemStacksStack(output, product) ||
+                    output.getCount() + 1 > output.getMaxStackSize()) {
+                return; // 输出满，暂停
             }
         }
 
         // 检查能量
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return;
 
-        // 计算本 tick 可消耗的魔力
+        // 计算魔力消耗
         int remainingMana = MANA_COST_PER_CRAFT - manaConsumed;
         int manaPerTick = Math.max(1, MANA_COST_PER_CRAFT / TICKS_PER_CRAFT);
         int manaToConsume = Math.min(manaPerTick, Math.min(remainingMana, mana));
-        if (manaToConsume <= 0) return; // 无魔力可用，暂停
+        if (manaToConsume <= 0) return; // 魔力不足，暂停
 
-        // 消耗能量
         energyStorage.extractEnergy(ENERGY_PER_TICK, false);
-        // 消耗魔力
         mana -= manaToConsume;
         manaConsumed += manaToConsume;
         progress = (manaConsumed * 100) / MANA_COST_PER_CRAFT;
-
         markDirty();
 
-        // 检查是否完成
         if (manaConsumed >= MANA_COST_PER_CRAFT) {
-            // 完成合成：消耗材料各1个
-            manasteel.shrink(1);
-            manapearl.shrink(1);
-            manadiamond.shrink(1);
+            // 消耗材料各1个
+            consumeOne(META_MANASTEEL);
+            consumeOne(META_MANAPEARL);
+            consumeOne(META_MANADIAMOND);
 
-            // 放入产物
-            if (outputStack.isEmpty()) {
+            if (output.isEmpty()) {
                 itemHandler.setStackInSlot(SLOT_OUTPUT, product.copy());
             } else {
-                outputStack.grow(1);
+                output.grow(1);
             }
 
-            // 重置状态，准备下一轮
             state = State.IDLE;
             progress = 0;
             manaConsumed = 0;
@@ -175,54 +193,69 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
         }
     }
 
-    // --- 面限制的 ItemHandler 实现 ---
-
+    // ---------- 输入/输出处理器 (保持面限制) ----------
     private class InputItemHandler implements IItemHandler {
         @Override
         public int getSlots() {
-            return 3; // 只暴露输入槽
+            return INPUT_SLOTS;
         }
 
         @Nonnull
         @Override
         public ItemStack getStackInSlot(int slot) {
-            if (slot >= 0 && slot < 3) return itemHandler.getStackInSlot(slot);
+            if (slot >= 0 && slot < INPUT_SLOTS) return itemHandler.getStackInSlot(slot);
             return ItemStack.EMPTY;
         }
 
         @Nonnull
         @Override
         public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) {
-            if (slot < 0 || slot >= 3) return stack;
-            // 检查是否是允许的材料
-            if (!isValidInput(stack)) return stack;
-            return itemHandler.insertItem(slot, stack, simulate);
+            if (stack.isEmpty() || !isValidInput(stack)) return stack;
+            // 任意槽插入，尝试堆叠/插入空位
+            return insertItemToInputs(stack, simulate);
         }
 
         @Nonnull
         @Override
         public ItemStack extractItem(int slot, int amount, boolean simulate) {
-            // 不允许提取
-            return ItemStack.EMPTY;
+            return ItemStack.EMPTY; // 禁止提取
         }
 
         @Override
         public int getSlotLimit(int slot) {
-            if (slot >= 0 && slot < 3) return itemHandler.getSlotLimit(slot);
-            return 0;
+            return itemHandler.getSlotLimit(slot);
         }
 
         private boolean isValidInput(ItemStack stack) {
-            if (stack.isEmpty()) return false;
-            Item item = stack.getItem();
-            return item == MANASTEEL || item == MANAPEARL || item == MANADIAMOND;
+            if (stack.getItem() != MANA_RESOURCE) return false;
+            int meta = stack.getItemDamage();
+            return meta == META_MANASTEEL || meta == META_MANAPEARL || meta == META_MANADIAMOND;
+        }
+
+        private ItemStack insertItemToInputs(ItemStack stack, boolean simulate) {
+            ItemStack remaining = stack.copy();
+            // 先尝试堆叠到已有相同物品的槽位
+            for (int i = 0; i < INPUT_SLOTS; i++) {
+                remaining = itemHandler.insertItem(i, remaining, true);
+                if (remaining.isEmpty()) break;
+            }
+            if (!simulate && remaining.getCount() != stack.getCount()) {
+                // 执行实际插入
+                ItemStack toInsert = stack.copy();
+                for (int i = 0; i < INPUT_SLOTS; i++) {
+                    toInsert = itemHandler.insertItem(i, toInsert, false);
+                    if (toInsert.isEmpty()) break;
+                }
+                return toInsert;
+            }
+            return remaining;
         }
     }
 
     private class OutputItemHandler implements IItemHandler {
         @Override
         public int getSlots() {
-            return 1; // 只暴露输出槽
+            return 1;
         }
 
         @Nonnull
@@ -235,8 +268,7 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
         @Nonnull
         @Override
         public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) {
-            // 不允许插入
-            return stack;
+            return stack; // 禁止插入
         }
 
         @Nonnull
@@ -250,12 +282,11 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
 
         @Override
         public int getSlotLimit(int slot) {
-            if (slot == 0) return itemHandler.getSlotLimit(SLOT_OUTPUT);
-            return 0;
+            return itemHandler.getSlotLimit(SLOT_OUTPUT);
         }
     }
 
-    // --- Capability 覆写，面限制 ---
+    // ---------- Capability 面限制 ----------
     @Override
     public boolean hasCapability(Capability<?> capability, @Nullable EnumFacing facing) {
         if (capability == CapabilityItemHandler.ITEM_HANDLER_CAPABILITY) return true;
@@ -282,7 +313,7 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
         return super.getCapability(capability, facing);
     }
 
-    // --- IManaBlock & IManaReceiver ---
+    // ---------- Mana / Spark ----------
     @Override
     public int getCurrentMana() { return mana; }
 
@@ -298,7 +329,6 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
     @Override
     public boolean canRecieveManaFromBursts() { return !isFull(); }
 
-    // --- ISparkAttachable ---
     @Override
     public boolean canAttachSpark(ItemStack stack) { return attachedSpark == null; }
 
@@ -314,12 +344,12 @@ public class TileTerraPlateAssembler extends TileBase implements ISparkAttachabl
     @Override
     public int getAvailableSpaceForMana() { return Math.max(0, MANA_CAPACITY - mana); }
 
-    // --- 状态 getter ---
+    // ---------- 客户端同步用 getter ----------
     public State getState() { return state; }
     public int getProgress() { return progress; }
     public int getMaxMana() { return MANA_CAPACITY; }
 
-    // --- NBT 读写 ---
+    // ---------- NBT 持久化 ----------
     @Override
     protected void readCustomNBT(NBTTagCompound compound) {
         mana = compound.getInteger("mana");

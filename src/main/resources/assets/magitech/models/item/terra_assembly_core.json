@@ -1,6 +1,6 @@
 {
   "parent": "item/generated",
   "textures": {
-    "layer0": "botania:blocks/terra_plate_top"
+    "layer0": "magitech:items/terra_assembly_core"
   }
 }
