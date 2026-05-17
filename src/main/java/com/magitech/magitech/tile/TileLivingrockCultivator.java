@@ -137,16 +137,14 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         }
     }
 
-    /** 尝试从输入槽中取一个有效原料放入指定的处理槽 */
+    /** 从输入栈中取一个有效原料放入指定处理槽 */
     private boolean tryFillProcessSlot(int slotIndex) {
         ProcessSlot slot = processSlots[slotIndex];
-        if (!slot.input.isEmpty()) return false; // 已被占用
+        if (!slot.input.isEmpty()) return false;
 
-        // 扫描输入槽，找到第一个有效的原料
         for (int i = 0; i < inputHandler.getSlots(); i++) {
             ItemStack stack = inputHandler.getStackInSlot(i);
             if (!stack.isEmpty() && getOutputForInput(stack) != null) {
-                // 取一个
                 ItemStack taken = inputHandler.extractItem(i, 1, false);
                 if (!taken.isEmpty()) {
                     slot.input = taken.copy();
@@ -158,37 +156,62 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return false;
     }
 
-    /** 根据原料返回成品（石头→活石，原木→活木），不支持则返回空 */
+    /**
+     * 根据原料返回成品 (改进后能够识别所有原木)
+     * 石头 (ore:stone)       → 活石
+     * 原木 (ore:logWood)     → 活木
+     */
     @Nullable
     private ItemStack getOutputForInput(ItemStack input) {
-        String oreName = getValidOreName(input);
-        if (oreName == null) return null;
-
-        if ("stone".equals(oreName)) {
-            Item livingrock = Item.getByNameOrId("botania:livingrock");
-            if (livingrock != null) return new ItemStack(livingrock);
-        } else if ("logWood".equals(oreName)) {
-            Item livingwood = Item.getByNameOrId("botania:livingwood");
-            if (livingwood != null) return new ItemStack(livingwood);
+        // 1. 检查是否是原木 (logWood) —— 这是修复橡木无法转换的要点
+        for (int oreId : OreDictionary.getOreIDs(input)) {
+            String oreName = OreDictionary.getOreName(oreId);
+            if ("logWood".equals(oreName)) {
+                return getBotaniaItem("livingwood");
+            }
         }
+
+        // 2. 检查是否是石头 (stone)
+        if (isStone(input)) {
+            return getBotaniaItem("livingrock");
+        }
+
         return null;
     }
 
-    /** 从矿物词典判断是否为石头或原木 */
-    private String getValidOreName(ItemStack stack) {
-        if (stack.isEmpty()) return null;
+    /** 检查物品是否为任何类型的原木 (增强兼容性) */
+    private boolean isLogWood(ItemStack stack) {
+        for (int id : OreDictionary.getOreIDs(stack)) {
+            if ("logWood".equals(OreDictionary.getOreName(id))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 检查物品是否为石头或圆石 (增强兼容性) */
+    private boolean isStone(ItemStack stack) {
         for (int id : OreDictionary.getOreIDs(stack)) {
             String name = OreDictionary.getOreName(id);
-            if ("stone".equals(name)) return "stone";
-            if ("logWood".equals(name)) return "logWood";
+            if ("stone".equals(name) || "cobblestone".equals(name)) {
+                return true;
+            }
         }
-        return null;
+        return false;
     }
 
-    /** 尝试将成品放入输出槽（合并或占新空位） */
+    /** 安全地从 Botania 模组获取物品 */
+    @Nullable
+    private ItemStack getBotaniaItem(String itemName) {
+        Item item = Item.getByNameOrId("botania:" + itemName);
+        return item != null ? new ItemStack(item) : null;
+    }
+
+    /** 尝试将成品放入输出槽 */
     private boolean tryInsertOutput(ItemStack output) {
         if (output.isEmpty()) return false;
         ItemStack remaining = output.copy();
+
         // 先尝试合并到已有同类物品的槽
         for (int i = 0; i < outputHandler.getSlots(); i++) {
             ItemStack existing = outputHandler.getStackInSlot(i);
@@ -209,8 +232,20 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
                 return true;
             }
         }
-        return false; // 输出槽已满
+        return false;
     }
+
+    /** 从矿物词典判断是否为石头或原木 */
+    private String getValidOreName(ItemStack stack) {
+        if (stack.isEmpty()) return null;
+        for (int id : OreDictionary.getOreIDs(stack)) {
+            String name = OreDictionary.getOreName(id);
+            if ("stone".equals(name)) return "stone";
+            if ("logWood".equals(name)) return "logWood";
+        }
+        return null;
+    }
+
 
     // ==================== 面限制（I/O方向） ====================
     private final IItemHandler inputWrapper = new IItemHandler() {
