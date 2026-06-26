@@ -20,17 +20,42 @@ import net.minecraftforge.oredict.OreDictionary;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
+/**
+ * 活石/活木培育器。
+ * <p>
+ * 将石头（及圆石）培育成活石、将原木培育成活木。
+ * 支持同时处理最多 8 个原料，每个处理槽独立计时，5 秒（100 ticks）完成。
+ * 处理过程中每 tick 消耗 FE 能量（每个活动槽消耗 4 FE/tick）。
+ * <p>
+ * 与基类不同，本机器自行管理物品栏（不使用 TileBase），
+ * 因为处理逻辑需要一个独立于输入/输出的内部处理区（processSlots），
+ * 同时输入和输出槽在物理上是分开的 ItemStackHandler。
+ * <p>
+ * 侧面控制：
+ *   上方/侧面 → 只可插入原料
+ *   下方 → 只可抽取成品
+ *   null（GUI/内部） → 完整访问所有槽
+ */
 public class TileLivingrockCultivator extends TileEntity implements ITickable {
 
     // 基础参数
+    /** 最大能量容量（FE） */
     public static final int ENERGY_CAPACITY = 10000;
-    public static final int ENERGY_PER_TICK = 4;          // 每个处理槽位每tick耗能
-    public static final int PROCESS_TIME = 100;           // 5秒 = 100 ticks (20 ticks/秒)
+    /** 每个活跃处理槽每 tick 消耗的能量（FE） */
+    public static final int ENERGY_PER_TICK = 4;
+    /** 单个物品处理时间（ticks），5 秒 = 100 ticks */
+    public static final int PROCESS_TIME = 100;
+    /** 输入槽数量 */
     public static final int INPUT_SLOTS = 4;
+    /** 输出槽数量 */
     public static final int OUTPUT_SLOTS = 4;
-    public static final int PROCESS_SLOTS = 8;            // 同时处理8个
+    /** 内部处理槽数量（可同时处理 8 个物品） */
+    public static final int PROCESS_SLOTS = 8;
 
-    // 自定义能量存储，支持 NBT
+    /**
+     * 自定义能量存储，支持通过 NBT 读写能量值。
+     * 扩展了 Forge 的 EnergyStorage 以提供 setEnergy 方法。
+     */
     private static class CustomEnergyStorage extends EnergyStorage {
         public CustomEnergyStorage(int capacity) {
             super(capacity);
@@ -55,10 +80,15 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         }
     }
 
-    // 内部数据结构：处理槽位
+    /**
+     * 内部数据结构：表示一个正在处理的物品槽位。
+     * 每个槽持有一个输入物品的副本及其当前处理进度。
+     */
     private static class ProcessSlot {
-        ItemStack input = ItemStack.EMPTY;   // 正在处理的原料副本
-        int progress = 0;                     // 0 ~ PROCESS_TIME
+        /** 正在处理的原料副本 */
+        ItemStack input = ItemStack.EMPTY;
+        /** 当前进度（0 ~ PROCESS_TIME） */
+        int progress = 0;
 
         NBTTagCompound serialize() {
             NBTTagCompound tag = new NBTTagCompound();
@@ -73,9 +103,13 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         }
     }
 
+    /** 内部处理槽数组（8 个并行处理位） */
     private final ProcessSlot[] processSlots = new ProcessSlot[PROCESS_SLOTS];
+    /** 输入物品栏（4 格，存放待处理的原料） */
     private final ItemStackHandler inputHandler = new ItemStackHandler(INPUT_SLOTS);
+    /** 输出物品栏（4 格，存放处理完成的成品） */
     private final ItemStackHandler outputHandler = new ItemStackHandler(OUTPUT_SLOTS);
+    /** 能量存储 */
     private final CustomEnergyStorage energyStorage = new CustomEnergyStorage(ENERGY_CAPACITY, ENERGY_CAPACITY, ENERGY_CAPACITY);
 
     public TileLivingrockCultivator() {
@@ -84,13 +118,20 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         }
     }
 
+    /**
+     * 每 tick 更新。仅在服务端执行。
+     * 逻辑顺序：
+     *   1. 消耗能量，推进所有活跃处理槽的进度
+     *   2. 处理已完成的任务（progress >= PROCESS_TIME），将成品输出到输出槽
+     *   3. 从输入槽取原料补充空的处理槽
+     */
     @Override
     public void update() {
         if (world.isRemote) return;
 
         boolean changed = false;
 
-        // 1. 能量消耗与进度推进
+        // 1. 统计活跃处理槽数量，消耗能量并推进进度
         int activeSlots = 0;
         for (ProcessSlot slot : processSlots) {
             if (!slot.input.isEmpty() && slot.progress < PROCESS_TIME) activeSlots++;
@@ -98,7 +139,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         int energyRequired = activeSlots * ENERGY_PER_TICK;
         if (energyStorage.getEnergyStored() >= energyRequired && energyRequired > 0) {
             energyStorage.extractEnergy(energyRequired, false);
-            // 进度增加
+            // 每个活跃槽进度+1
             for (ProcessSlot slot : processSlots) {
                 if (!slot.input.isEmpty() && slot.progress < PROCESS_TIME) {
                     slot.progress++;
@@ -111,21 +152,19 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         for (int i = 0; i < PROCESS_SLOTS; i++) {
             ProcessSlot slot = processSlots[i];
             if (!slot.input.isEmpty() && slot.progress >= PROCESS_TIME) {
-                // 尝试输出
                 ItemStack output = getOutputForInput(slot.input);
                 if (!output.isEmpty() && tryInsertOutput(output)) {
-                    // 输出成功，清空处理槽，尝试从输入槽取新原料
+                    // 输出成功，清空处理槽，尝试立即从输入槽补充新原料
                     slot.input = ItemStack.EMPTY;
                     slot.progress = 0;
                     changed = true;
-                    // 立即补充新任务（如果有原料）
                     tryFillProcessSlot(i);
                 }
-                // 如果输出失败（输出槽满），则保持完成状态，等待下次tick再试
+                // 输出失败（输出槽满），保持完成状态，等待下次 tick 再试
             }
         }
 
-        // 3. 补充空处理槽（如果输出成功导致槽位空，或者一开始就是空的）
+        // 3. 补充所有空的处理槽
         for (int i = 0; i < PROCESS_SLOTS; i++) {
             if (processSlots[i].input.isEmpty()) {
                 if (tryFillProcessSlot(i)) changed = true;
@@ -137,7 +176,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         }
     }
 
-    /** 从输入栈中取一个有效原料放入指定处理槽 */
+    /** 从输入槽中取一个有效原料放入指定处理槽 */
     private boolean tryFillProcessSlot(int slotIndex) {
         ProcessSlot slot = processSlots[slotIndex];
         if (!slot.input.isEmpty()) return false;
@@ -157,13 +196,13 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
     }
 
     /**
-     * 根据原料返回成品 (改进后能够识别所有原木)
-     * 石头 (ore:stone)       → 活石
-     * 原木 (ore:logWood)     → 活木
+     * 根据原料返回对应的成品。
+     * 石头（stone/cobblestone）→ 活石
+     * 原木（logWood）→ 活木
      */
     @Nullable
     private ItemStack getOutputForInput(ItemStack input) {
-        // 1. 检查是否是原木 (logWood) —— 这是修复橡木无法转换的要点
+        // 检查是否是原木
         for (int oreId : OreDictionary.getOreIDs(input)) {
             String oreName = OreDictionary.getOreName(oreId);
             if ("logWood".equals(oreName)) {
@@ -171,7 +210,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
             }
         }
 
-        // 2. 检查是否是石头 (stone)
+        // 检查是否是石头或圆石
         if (isStone(input)) {
             return getBotaniaItem("livingrock");
         }
@@ -179,7 +218,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return null;
     }
 
-    /** 检查物品是否为任何类型的原木 (增强兼容性) */
+    /** 检查物品是否为任何类型的原木（通过矿物词典增强兼容性） */
     private boolean isLogWood(ItemStack stack) {
         for (int id : OreDictionary.getOreIDs(stack)) {
             if ("logWood".equals(OreDictionary.getOreName(id))) {
@@ -189,7 +228,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return false;
     }
 
-    /** 检查物品是否为石头或圆石 (增强兼容性) */
+    /** 检查物品是否为石头或圆石（通过矿物词典增强兼容性） */
     private boolean isStone(ItemStack stack) {
         for (int id : OreDictionary.getOreIDs(stack)) {
             String name = OreDictionary.getOreName(id);
@@ -207,7 +246,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return item != null ? new ItemStack(item) : null;
     }
 
-    /** 尝试将成品放入输出槽 */
+    /** 尝试将成品放入输出槽。先尝试堆叠到已有同种物品的槽中，再放入空槽 */
     private boolean tryInsertOutput(ItemStack output) {
         if (output.isEmpty()) return false;
         ItemStack remaining = output.copy();
@@ -235,7 +274,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return false;
     }
 
-    /** 从矿物词典判断是否为石头或原木 */
+    /** 从矿物词典判断物品是否为石头或原木，返回对应的 oreName */
     private String getValidOreName(ItemStack stack) {
         if (stack.isEmpty()) return null;
         for (int id : OreDictionary.getOreIDs(stack)) {
@@ -246,25 +285,27 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return null;
     }
 
-
     // ==================== 面限制（I/O方向） ====================
+
+    /** 输入包装器：暴露输入槽，只允许插入，禁止抽取 */
     private final IItemHandler inputWrapper = new IItemHandler() {
         @Override public int getSlots() { return INPUT_SLOTS; }
         @Nonnull @Override public ItemStack getStackInSlot(int slot) { return inputHandler.getStackInSlot(slot); }
         @Nonnull @Override public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) { return inputHandler.insertItem(slot, stack, simulate); }
-        @Nonnull @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return ItemStack.EMPTY; } // 不允许从输入槽提取
+        @Nonnull @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return ItemStack.EMPTY; }
         @Override public int getSlotLimit(int slot) { return inputHandler.getSlotLimit(slot); }
     };
 
+    /** 输出包装器：暴露输出槽，只允许抽取，禁止插入 */
     private final IItemHandler outputWrapper = new IItemHandler() {
         @Override public int getSlots() { return OUTPUT_SLOTS; }
         @Nonnull @Override public ItemStack getStackInSlot(int slot) { return outputHandler.getStackInSlot(slot); }
-        @Nonnull @Override public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) { return stack; } // 不允许外部插入输出槽
+        @Nonnull @Override public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) { return stack; }
         @Nonnull @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return outputHandler.extractItem(slot, amount, simulate); }
         @Override public int getSlotLimit(int slot) { return outputHandler.getSlotLimit(slot); }
     };
 
-    // GUI用：同时暴露输入+输出槽
+    /** 完整处理器（GUI 使用）：同时暴露输入+输出槽，输入槽只可插入，输出槽只可抽取 */
     private final IItemHandler fullHandler = new IItemHandler() {
         @Override public int getSlots() { return INPUT_SLOTS + OUTPUT_SLOTS; }
         @Nonnull @Override public ItemStack getStackInSlot(int slot) {
@@ -274,11 +315,11 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         @Nonnull @Override
         public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) {
             if (slot < INPUT_SLOTS) return inputHandler.insertItem(slot, stack, simulate);
-            else return stack; // 不允许插入输出槽
+            else return stack;
         }
         @Nonnull @Override
         public ItemStack extractItem(int slot, int amount, boolean simulate) {
-            if (slot < INPUT_SLOTS) return ItemStack.EMPTY; // 不允许从输入槽提取
+            if (slot < INPUT_SLOTS) return ItemStack.EMPTY;
             else return outputHandler.extractItem(slot - INPUT_SLOTS, amount, simulate);
         }
         @Override public int getSlotLimit(int slot) {
@@ -309,12 +350,13 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
     }
 
     // ==================== NBT 持久化 ====================
+
     @Override
     public void readFromNBT(NBTTagCompound compound) {
         super.readFromNBT(compound);
         inputHandler.deserializeNBT(compound.getCompoundTag("InputInventory"));
         outputHandler.deserializeNBT(compound.getCompoundTag("OutputInventory"));
-        energyStorage.readFromNBT(compound);   // 直接传入整个 compound，内部读取 "Energy"
+        energyStorage.readFromNBT(compound);
         NBTTagList processList = compound.getTagList("ProcessSlots", Constants.NBT.TAG_COMPOUND);
         for (int i = 0; i < processList.tagCount() && i < PROCESS_SLOTS; i++) {
             processSlots[i].deserialize(processList.getCompoundTagAt(i));
@@ -335,7 +377,7 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         return compound;
     }
 
-    // 以下方法供外部查询进度（可选）
+    // 供外部（GUI）查询进度
     public int getProgress(int slot) {
         if (slot >= 0 && slot < PROCESS_SLOTS) return processSlots[slot].progress;
         return 0;

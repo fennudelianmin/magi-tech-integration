@@ -16,17 +16,45 @@ import vazkii.botania.api.recipe.RecipeRuneAltar;
 
 import java.util.*;
 
+/**
+ * 符文祭坛自动化机器。
+ * <p>
+ * 自动执行 Botania 符文祭坛的合成。将 Botania 原版符文祭坛配方缓存到内存中，
+ * 通过物品栏输入原料和魔力火花供给能量，自动匹配配方并批量合成。
+ * <p>
+ * 工作流程：
+ *   IDLE → 检查原料和魔力 → 匹配配方 → CRAFTING
+ *   CRAFTING → 每 tick 消耗魔力和 FE → 进度满后消耗原料 → OUTPUT
+ *   OUTPUT → 将产物和催化剂余料写入输出槽 → IDLE
+ * <p>
+ * 侧面控制：
+ *   上方/侧面 → 只可插入（InputOnly）
+ *   下方 → 只可抽取（OutputOnly）
+ */
 public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
 
+    /** 最大能量容量（FE） */
     public static final int ENERGY_CAPACITY = 40000;
+    /** 每 tick 消耗的能量（FE） */
     public static final int ENERGY_PER_TICK = 16;
+    /** 最大魔力容量 */
     public static final int MANA_CAPACITY = 200000;
 
+    /** 输入槽数量（32格，存放原料和催化剂） */
     private static final int INPUT_SLOTS = 32;
+    /** 输出槽数量（32格，存放产物和催化剂的余料） */
     private static final int OUTPUT_SLOTS = 32;
+    /** 总槽位数 */
     private static final int TOTAL_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS;
+    /** 输出槽的起始索引（物品栏中前32个是输入，后32个是输出） */
     private static final int FIRST_OUTPUT_SLOT = INPUT_SLOTS;
 
+    /**
+     * 机器状态枚举。
+     * IDLE    — 空闲，等待原料并尝试匹配配方
+     * CRAFTING — 合成中，逐步消耗魔力推进进度
+     * OUTPUT   — 合成完成，将产物写入输出槽
+     */
     public enum State {
         IDLE,
         CRAFTING,
@@ -34,12 +62,19 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
 
     // ==================== 配方缓存 ====================
+
+    /** 静态配方案缓存，启动时从 BotaniaAPI 加载所有符文祭坛配方，合并处理后放入列表 */
     private static List<CachedRecipe> recipeCache = null;
 
     static {
         initRecipeCache();
     }
 
+    /**
+     * 初始化配方缓存。
+     * 遍历 Botania 注册的所有符文祭坛配方，将每个配方的输入按物品定义去重合并，
+     * 并区分为"催化剂"（矿物词典名称以 rune 开头）和"非催化剂"两类。
+     */
     private static void initRecipeCache() {
         recipeCache = new ArrayList<>();
         for (RecipeRuneAltar recipe : BotaniaAPI.runeAltarRecipes) {
@@ -48,7 +83,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
             cr.output = recipe.getOutput().copy();
             cr.originalRecipe = recipe;
 
-            // 解析并合并配方输入
+            // 解析并合并配方输入：将同种物品合并为一个条目并统计总数量
             Map<ItemDefinition, Integer> merged = new HashMap<>();
             for (Object input : recipe.getInputs()) {
                 ItemStack stack = parseInputObject(input);
@@ -57,11 +92,12 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
                 merged.put(def, merged.getOrDefault(def, 0) + stack.getCount());
             }
 
-            // 区分催化剂和非催化剂
+            // 区分配方中的催化剂和非催化剂
             for (Map.Entry<ItemDefinition, Integer> entry : merged.entrySet()) {
                 ItemStack representative = entry.getKey().exampleStack;
                 int count = entry.getValue();
 
+                // 判断是否为催化剂：矿物词典名称以 "rune" 开头的视为符文催化剂
                 boolean isCatalyst = false;
                 for (int id : OreDictionary.getOreIDs(representative)) {
                     if (OreDictionary.getOreName(id).startsWith("rune")) {
@@ -83,6 +119,10 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         }
     }
 
+    /**
+     * 将配方输入对象解析为 ItemStack。
+     * Botania 配方输入可以是 ItemStack（具体物品）或 String（矿物词典名称）。
+     */
     private static ItemStack parseInputObject(Object input) {
         if (input instanceof ItemStack) {
             return ((ItemStack) input).copy();
@@ -95,16 +135,29 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         return ItemStack.EMPTY;
     }
 
+    /** 缓存配方结构体：记录原料需求（分催化剂/非催化剂）、产物、魔力消耗和原始配方引用 */
     static class CachedRecipe {
-        List<ItemStack> nonCatalysts = new ArrayList<>();   // 配方所需的普通原料（已合并）
-        List<ItemStack> catalysts = new ArrayList<>();      // 配方所需的催化剂（已合并）
+        /** 配方所需的普通原料列表（已按物品类型合并数量） */
+        List<ItemStack> nonCatalysts = new ArrayList<>();
+        /** 配方所需的催化剂列表（符文，已合并数量） */
+        List<ItemStack> catalysts = new ArrayList<>();
+        /** 合成产物 */
         ItemStack output;
+        /** 合成所需魔力 */
         int manaUsage;
+        /** 原始 Botania 配方引用 */
         RecipeRuneAltar originalRecipe;
     }
 
+    /**
+     * 物品定义，用于配方匹配中的物品比较。
+     * 先按 ItemStack 完全匹配，若失败且双方都有矿物词典 ID，
+     * 则通过共享矿物词典 ID 进行兼容匹配（例如不同颜色的符文视为同类）。
+     */
     static class ItemDefinition {
+        /** 代表物品栈（数量固定为1，仅用于比较） */
         ItemStack exampleStack;
+        /** 该物品的矿物词典 ID 列表 */
         int[] oreIDs;
 
         ItemDefinition(ItemStack stack) {
@@ -118,7 +171,9 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
             if (this == o) return true;
             if (!(o instanceof ItemDefinition)) return false;
             ItemDefinition that = (ItemDefinition) o;
+            // 先尝试精确匹配
             if (ItemStack.areItemsEqual(this.exampleStack, that.exampleStack)) return true;
+            // 若双方都有矿物词典 ID，尝试通过共有的 ID 匹配
             if (this.oreIDs.length > 0 && that.oreIDs.length > 0) {
                 for (int id1 : this.oreIDs) {
                     for (int id2 : that.oreIDs) {
@@ -136,12 +191,20 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
 
     // ==================== 机器字段 ====================
+
+    /** 当前存储的魔力值 */
     protected int mana;
+    /** 连接的火花实体，用于从火花网络接收魔力 */
     protected ISparkEntity attachedSpark;
+    /** 机器当前状态 */
     private State state = State.IDLE;
+    /** 当前合成进度累计消耗的魔力值 */
     private int progress;
+    /** 当前正在合成的 Botania 配方 */
     private RecipeRuneAltar currentRecipe;
-    private CachedRecipe matchedCachedRecipe;   // 当前匹配到的缓存配方
+    /** 当前匹配到的缓存配方 */
+    private CachedRecipe matchedCachedRecipe;
+    /** 当前配方所需的总魔力值 */
     private int manaCost;
 
     public TileRuneAltarMachine() {
@@ -150,6 +213,12 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         this.progress = 0;
     }
 
+    /**
+     * 每 tick 更新。仅在服务端执行，根据当前状态执行对应逻辑：
+     * IDLE → 尝试匹配并开始合成；
+     * CRAFTING → 推进合成进度；
+     * OUTPUT → 输出产物。
+     */
     @Override
     public void update() {
         if (world.isRemote) return;
@@ -166,10 +235,15 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         }
     }
 
+    /**
+     * 尝试启动一次合成。
+     * 步骤：收集输入槽物品 → 合并 → 匹配配方缓存 → 检查魔力 → 检查输出空间。
+     * 匹配成功后进入 CRAFTING 状态。
+     */
     private void tryStartCrafting() {
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return;
 
-        // 收集并合并输入槽物品
+        // 收集并合并输入槽中的物品，同种物品合并后计数
         List<ItemStack> mergedInputs = new ArrayList<>();
         for (int i = 0; i < INPUT_SLOTS; i++) {
             ItemStack stack = itemHandler.getStackInSlot(i);
@@ -194,18 +268,19 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         }
         if (mergedInputs.isEmpty()) return;
 
-        // 构建输入Map
+        // 构建输入物品的 Map（物品定义 → 数量）
         Map<ItemDefinition, Integer> inputMap = new HashMap<>();
         for (ItemStack stack : mergedInputs) {
             ItemDefinition def = new ItemDefinition(stack);
             inputMap.put(def, inputMap.getOrDefault(def, 0) + stack.getCount());
         }
 
-        // 匹配缓存配方
+        // 匹配配方缓存
         currentRecipe = null;
         matchedCachedRecipe = null;
 
         for (CachedRecipe cr : recipeCache) {
+            // 检查魔力是否足够
             if (mana < cr.manaUsage) continue;
 
             Map<ItemDefinition, Integer> remaining = new HashMap<>(inputMap);
@@ -235,8 +310,6 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
             }
             if (!enough) continue;
 
-            // ---------- 删除原来的“多余物品检查” ----------
-
             currentRecipe = cr.originalRecipe;
             manaCost = cr.manaUsage;
             matchedCachedRecipe = cr;
@@ -246,7 +319,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         if (currentRecipe == null) return;
         System.out.println("匹配到的配方：" + currentRecipe);
 
-        // 检查输出空间（产物 + 配方催化剂）
+        // 检查输出槽是否有足够空间容纳产物和催化剂余料
         if (!canFitOutputs(currentRecipe.getOutput(), matchedCachedRecipe.catalysts)) {
             currentRecipe = null;
             matchedCachedRecipe = null;
@@ -257,6 +330,10 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         progress = 0;
     }
 
+    /**
+     * 模拟检查输出槽能否容纳产物和催化剂。
+     * 使用一个临时物品栏副本进行模拟插入以避免真正改变数据。
+     */
     private boolean canFitOutputs(ItemStack output, List<ItemStack> recipeCatalysts) {
         ItemStackHandler tempOutput = new ItemStackHandler(OUTPUT_SLOTS);
         for (int i = 0; i < OUTPUT_SLOTS; i++) {
@@ -273,6 +350,11 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         return true;
     }
 
+    /**
+     * 推进合成进度。
+     * 每次消耗 ENERGY_PER_TICK 的 FE 和一定量的魔力，累计到进度中。
+     * 当进度达到所需魔力总量时，从输入槽扣除非催化剂原料，进入 OUTPUT 状态。
+     */
     private void doCrafting() {
         if (!consumeEnergy()) return;
         int manaPerTick = Math.max(1, manaCost / 60);
@@ -282,17 +364,18 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         progress += manaPerTick;
 
         if (progress >= manaCost) {
-            // 精确消耗非催化剂：只扣除配方所需的一份
+            // 精确消耗非催化剂：只扣除配方所需的一份（数量配方的需求量）
             List<ItemStack> toConsume = new ArrayList<>();
             for (ItemStack need : matchedCachedRecipe.nonCatalysts) {
                 toConsume.add(need.copy());
             }
 
+            // 遍历输入槽，逐一扣除对应原料
             for (int i = 0; i < INPUT_SLOTS && !toConsume.isEmpty(); i++) {
                 ItemStack slotStack = itemHandler.getStackInSlot(i);
                 if (slotStack.isEmpty()) continue;
 
-                // 跳过催化剂
+                // 跳过催化剂（符文不应被消耗）
                 boolean isCatalyst = false;
                 for (int id : OreDictionary.getOreIDs(slotStack)) {
                     if (OreDictionary.getOreName(id).startsWith("rune")) {
@@ -302,7 +385,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
                 }
                 if (isCatalyst) continue;
 
-                // 尝试从这个槽扣除所需原料
+                // 尝试从这个槽扣除所需的原料
                 for (Iterator<ItemStack> it = toConsume.iterator(); it.hasNext(); ) {
                     ItemStack need = it.next();
                     if (ItemHandlerHelper.canItemStacksStack(slotStack, need)) {
@@ -315,7 +398,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
                         if (need.getCount() <= 0) {
                             it.remove();
                         }
-                        break; // 这个槽处理完一种原料，继续下一个槽
+                        break;
                     }
                 }
             }
@@ -325,13 +408,20 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         markDirty();
     }
 
+    /**
+     * 输出产物并处理催化剂余料。
+     * 将产物插入输出槽，然后从输入槽中取走一份配方的催化剂，
+     * 插入到输出槽以供玩家/管道取回。
+     * 完成后重置状态回到 IDLE。
+     */
     private void doOutput() {
-        // 插入产物
+        // 构建输出区视图
         ItemStackHandler outputView = new ItemStackHandler(OUTPUT_SLOTS);
         for (int i = 0; i < OUTPUT_SLOTS; i++) {
             outputView.setStackInSlot(i, itemHandler.getStackInSlot(FIRST_OUTPUT_SLOT + i));
         }
 
+        // 插入产物
         ItemStack result = ItemHandlerHelper.insertItemStacked(outputView, currentRecipe.getOutput().copy(), false);
         if (!result.isEmpty()) {
             resetState();
@@ -345,7 +435,6 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
             for (int i = 0; i < INPUT_SLOTS && stillNeed > 0; i++) {
                 ItemStack inSlot = itemHandler.getStackInSlot(i);
                 if (inSlot.isEmpty()) continue;
-                // 必须是同种催化剂
                 if (!ItemHandlerHelper.canItemStacksStack(inSlot, needed)) continue;
 
                 int toTake = Math.min(stillNeed, inSlot.getCount());
@@ -371,12 +460,14 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         resetState();
     }
 
+    /** 每 tick 消耗 FE 能量，若能量不足则返回 false */
     private boolean consumeEnergy() {
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return false;
         energyStorage.extractEnergy(ENERGY_PER_TICK, false);
         return true;
     }
 
+    /** 重置机器状态为 IDLE，清空合成相关的临时字段 */
     private void resetState() {
         state = State.IDLE;
         progress = 0;
@@ -387,6 +478,12 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
 
     // ==================== Capability 侧面限制 ====================
+
+    /**
+     * 覆写基类的 getCapability，根据方向返回不同的物品栏处理器：
+     * 下方 → 只可抽取（OutputOnly）
+     * 其他面 → 只可插入（InputOnly）
+     */
     @Override
     public <T> T getCapability(Capability<T> capability, EnumFacing facing) {
         if (capability == CapabilityItemHandler.ITEM_HANDLER_CAPABILITY) {
@@ -399,6 +496,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         return super.getCapability(capability, facing);
     }
 
+    /** 只输出处理器：暴露输出槽，禁止插入，只允许抽取 */
     private class OutputOnlyHandler extends ItemStackHandler {
         OutputOnlyHandler() { super(OUTPUT_SLOTS); }
         @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) { return stack; }
@@ -412,6 +510,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
         }
     }
 
+    /** 只输入处理器：暴露输入槽，禁止抽取，只允许插入 */
     private class InputOnlyHandler extends ItemStackHandler {
         InputOnlyHandler() { super(INPUT_SLOTS); }
         @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return ItemStack.EMPTY; }
@@ -426,6 +525,7 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
 
     // ==================== Botania 魔力接口 ====================
+
     @Override public int getCurrentMana() { return mana; }
     @Override public boolean isFull() { return mana >= MANA_CAPACITY; }
     @Override public void recieveMana(int mana) {
@@ -434,7 +534,8 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     }
     @Override public boolean canRecieveManaFromBursts() { return !isFull(); }
 
-    // ==================== ISparkAttachable ====================
+    // ==================== ISparkAttachable（火花接口） ====================
+
     @Override public boolean canAttachSpark(ItemStack stack) { return attachedSpark == null; }
     @Override public void attachSpark(ISparkEntity entity) { this.attachedSpark = entity; }
     @Override public ISparkEntity getAttachedSpark() { return attachedSpark; }
@@ -442,12 +543,14 @@ public class TileRuneAltarMachine extends TileBase implements ISparkAttachable {
     @Override public int getAvailableSpaceForMana() { return Math.max(0, MANA_CAPACITY - mana); }
 
     // ==================== 客户端/服务端状态 ====================
+
     public State getState() { return state; }
     public int getProgress() { return progress; }
     public int getManaCost() { return manaCost; }
     public int getMaxMana() { return MANA_CAPACITY; }
 
     // ==================== NBT 持久化 ====================
+
     @Override
     protected void readCustomNBT(NBTTagCompound compound) {
         mana = compound.getInteger("mana");

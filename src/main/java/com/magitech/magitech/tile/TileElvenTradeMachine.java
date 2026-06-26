@@ -18,23 +18,53 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.*;
 
+/**
+ * 精灵交易自动化机器。
+ * <p>
+ * 自动执行 Botania 精灵交易。将 Botania 原版精灵交易配方缓存到内存中，
+ * 仅支持单一类型输入的配方（例如 1 个梦境草地毯 → 1 个精灵草地毯）。
+ * 需要消耗魔力和 FE 能量，约 1 秒完成一次交易。
+ * <p>
+ * 工作流程：
+ *   IDLE → 检查输入和配方匹配 → TRADING
+ *   TRADING → 消耗魔力推进进度 → 消耗输入物品 → OUTPUT
+ *   OUTPUT → 写入输出槽 → IDLE
+ * <p>
+ * 侧面控制：
+ *   下方 → 只可抽取（取出交易产物）
+ *   其他面 → 只可插入（放入交易原料）
+ */
 public class TileElvenTradeMachine extends TileBase implements ISparkAttachable {
 
+    /** 最大能量容量（FE） */
     public static final int ENERGY_CAPACITY = 20000;
+    /** 每 tick 消耗的能量（FE） */
     public static final int ENERGY_PER_TICK = 8;
+    /** 最大魔力容量 */
     public static final int MANA_CAPACITY = 50000;
+    /** 默认每次交易消耗的魔力值 */
     public static final int DEFAULT_MANA_COST = 2000;
 
+    /** 输入槽索引 */
     private static final int INPUT_SLOT = 0;
+    /** 输出槽索引 */
     private static final int OUTPUT_SLOT = 1;
 
     // ==================== 配方缓存 ====================
+
+    /** 静态配方缓存，启动时从 BotaniaAPI 加载所有精灵交易配方 */
     private static List<CachedElvenRecipe> recipeCache = null;
 
     static {
         initRecipeCache();
     }
 
+    /**
+     * 初始化配方缓存。
+     * 遍历 Botania 的所有精灵交易配方，将输入物品按物品定义合并后，
+     * 仅保留那些只有单一类型输入的配方（合并后 merged.size() == 1）。
+     * 多类型输入的复杂配方不予支持。
+     */
     private static void initRecipeCache() {
         recipeCache = new ArrayList<>();
         for (RecipeElvenTrade recipe : BotaniaAPI.elvenTradeRecipes) {
@@ -50,14 +80,14 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
                 ItemDefinition def = new ItemDefinition(stack);
                 merged.put(def, merged.getOrDefault(def, 0) + stack.getCount());
             }
-            if (invalid || merged.size() != 1) continue; // 仅支持单一类型输入
+            if (invalid || merged.size() != 1) continue;
 
             // 获取代表物品和需求数量
             Map.Entry<ItemDefinition, Integer> entry = merged.entrySet().iterator().next();
             ItemStack inputStack = entry.getKey().exampleStack.copy();
             inputStack.setCount(entry.getValue());
 
-            // 获取输出（取第一个产物）
+            // 取第一个产物作为输出
             List<ItemStack> outputs = recipe.getOutputs();
             if (outputs.isEmpty()) continue;
             ItemStack output = outputs.get(0).copy();
@@ -65,12 +95,13 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
             CachedElvenRecipe cr = new CachedElvenRecipe();
             cr.input = inputStack;
             cr.output = output;
-            cr.manaCost = DEFAULT_MANA_COST; // 可在此处通过配置覆盖
+            cr.manaCost = DEFAULT_MANA_COST;
             cr.originalRecipe = recipe;
             recipeCache.add(cr);
         }
     }
 
+    /** 将配方输入对象（ItemStack 或矿物词典字符串）解析为 ItemStack */
     private static ItemStack parseInputObject(Object input) {
         if (input instanceof ItemStack) {
             return ((ItemStack) input).copy();
@@ -83,15 +114,22 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         return ItemStack.EMPTY;
     }
 
-    // 内部缓存类
+    /** 缓存配方结构体：记录输入需求、产物、魔力消耗和原始配方引用 */
     static class CachedElvenRecipe {
-        ItemStack input;          // 合并后的输入（数量即需求数）
-        ItemStack output;         // 产物
+        /** 合并后的输入（数量即需求数） */
+        ItemStack input;
+        /** 产物 */
+        ItemStack output;
+        /** 所需魔力 */
         int manaCost;
+        /** 原始 Botania 配方引用 */
         RecipeElvenTrade originalRecipe;
     }
 
-    // 物品定义（支持矿物词典比较）
+    /**
+     * 物品定义，用于配方匹配中的物品比较。
+     * 支持精确匹配和矿物词典兼容匹配。
+     */
     static class ItemDefinition {
         ItemStack exampleStack;
         int[] oreIDs;
@@ -125,18 +163,31 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
     }
 
     // ==================== 机器字段 ====================
+
+    /** 当前存储的魔力值 */
     protected int mana;
+    /** 连接的火花实体 */
     protected ISparkEntity attachedSpark;
     private State state = State.IDLE;
+    /** 当前交易进度累计消耗的魔力值 */
     private int progress;
+    /** 当前交易所需魔力值 */
     private int manaCost;
-    private CachedElvenRecipe currentCachedRecipe;   // 当前匹配的缓存配方
-    private ItemStack pendingOutput;                  // 预先生成的产物（保留用于输出）
+    /** 当前匹配到的缓存配方 */
+    private CachedElvenRecipe currentCachedRecipe;
+    /** 预先生成的产物（保留用于输出阶段） */
+    private ItemStack pendingOutput;
 
+    /**
+     * 机器状态枚举。
+     * IDLE    — 等待原料并尝试匹配配方
+     * TRADING — 交易中，消耗魔力推进进度
+     * OUTPUT  — 交易完成，将产物写入输出槽
+     */
     public enum State {
-        IDLE,          // 等待原料
-        TRADING,       // 交易中
-        OUTPUT         // 产物输出
+        IDLE,
+        TRADING,
+        OUTPUT
     }
 
     // 侧面能力代理
@@ -149,6 +200,11 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         this.manaCost = DEFAULT_MANA_COST;
     }
 
+    /**
+     * 每 tick 更新。仅在服务端执行。
+     * 状态机与符文祭坛机器类似：
+     * IDLE → TRADING → OUTPUT → IDLE
+     */
     @Override
     public void update() {
         if (world.isRemote) return;
@@ -166,6 +222,11 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         }
     }
 
+    /**
+     * 尝试启动一次交易。
+     * 检查：FE 能量、输入物品、魔力、配方匹配、输出空间。
+     * 匹配成功后进入 TRADING 状态。
+     */
     private void tryStartTrading() {
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return;
 
@@ -175,7 +236,7 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         // 检查魔力
         if (mana < DEFAULT_MANA_COST) return;
 
-        // 遍历缓存匹配配方
+        // 遍历配方缓存匹配
         for (CachedElvenRecipe cr : recipeCache) {
             ItemStack required = cr.input;
 
@@ -210,23 +271,29 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         progress = 0;
     }
 
+    /**
+     * 推进交易进度。
+     * 每 tick 消耗 FE 和一定魔力，约 20 tick 完成一次交易。
+     * 进度达到所需魔力后，从输入槽扣除原料，进入 OUTPUT 状态。
+     */
     private void doTrading() {
         if (!consumeEnergy()) return;
 
-        int manaPerTick = Math.max(1, manaCost / 20); // 约1秒完成
+        int manaPerTick = Math.max(1, manaCost / 20);
         if (mana < manaPerTick) return;
 
         mana -= manaPerTick;
         progress += manaPerTick;
 
         if (progress >= manaCost) {
-            // 消耗输入物品（扣除配方所需数量）
+            // 消耗输入物品
             itemHandler.getStackInSlot(INPUT_SLOT).shrink(currentCachedRecipe.input.getCount());
             state = State.OUTPUT;
         }
         markDirty();
     }
 
+    /** 将预生成的产物写入输出槽 */
     private void doOutput() {
         ItemStack outputSlot = itemHandler.getStackInSlot(OUTPUT_SLOT);
         if (outputSlot.isEmpty()) {
@@ -237,12 +304,14 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         resetState();
     }
 
+    /** 每 tick 消耗 FE 能量 */
     private boolean consumeEnergy() {
         if (energyStorage.getEnergyStored() < ENERGY_PER_TICK) return false;
         energyStorage.extractEnergy(ENERGY_PER_TICK, false);
         return true;
     }
 
+    /** 重置机器状态为 IDLE */
     private void resetState() {
         state = State.IDLE;
         progress = 0;
@@ -253,6 +322,7 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
     }
 
     // ==================== 魔力与火花接口 ====================
+
     @Override
     public int getCurrentMana() { return mana; }
 
@@ -284,12 +354,14 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
     public int getAvailableSpaceForMana() { return Math.max(0, MANA_CAPACITY - mana); }
 
     // ==================== 状态 Getters ====================
+
     public State getState() { return state; }
     public int getProgress() { return progress; }
     public int getManaCost() { return manaCost; }
     public int getMaxMana() { return MANA_CAPACITY; }
 
     // ==================== NBT 持久化 ====================
+
     @Override
     protected void readCustomNBT(NBTTagCompound compound) {
         mana = compound.getInteger("mana");
@@ -307,6 +379,7 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
     }
 
     // ==================== 侧面自动化控制 ====================
+
     @Override
     public boolean hasCapability(@Nonnull Capability<?> capability, @Nullable EnumFacing facing) {
         if (capability == CapabilityItemHandler.ITEM_HANDLER_CAPABILITY) {
@@ -328,7 +401,7 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         return super.getCapability(capability, facing);
     }
 
-    // 输入代理：仅暴露输入槽，禁止提取
+    /** 输入代理：暴露输入槽，只允许插入，禁止抽取 */
     private class InputHandler implements IItemHandler {
         @Override
         public int getSlots() { return 1; }
@@ -366,7 +439,7 @@ public class TileElvenTradeMachine extends TileBase implements ISparkAttachable 
         }
     }
 
-    // 输出代理：仅暴露输出槽，禁止插入
+    /** 输出代理：暴露输出槽，只允许抽取，禁止插入 */
     private class OutputHandler implements IItemHandler {
         @Override
         public int getSlots() { return 1; }
