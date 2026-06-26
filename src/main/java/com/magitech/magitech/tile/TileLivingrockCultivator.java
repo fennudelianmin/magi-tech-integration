@@ -1,5 +1,6 @@
 package com.magitech.magitech.tile;
 
+import net.minecraft.entity.item.EntityItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -7,6 +8,8 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.energy.CapabilityEnergy;
@@ -36,7 +39,7 @@ import javax.annotation.Nullable;
  *   下方 → 只可抽取成品
  *   null（GUI/内部） → 完整访问所有槽
  */
-public class TileLivingrockCultivator extends TileEntity implements ITickable {
+public class TileLivingrockCultivator extends TileEntity implements ITickable, IDroppableInventory {
 
     // 基础参数
     /** 最大能量容量（FE） */
@@ -375,6 +378,43 @@ public class TileLivingrockCultivator extends TileEntity implements ITickable {
         }
         compound.setTag("ProcessSlots", processList);
         return compound;
+    }
+
+    // ==================== 破坏时掉落物品 ====================
+
+    /**
+     * 将输入槽、输出槽和内部处理槽中所有物品以掉落物形式弹出到世界中。
+     */
+    @Override
+    public void dropItems(World world, BlockPos pos) {
+        // 掉落输入槽物品
+        for (int i = 0; i < inputHandler.getSlots(); i++) {
+            spawnItemStack(world, pos, inputHandler.getStackInSlot(i));
+        }
+        // 掉落输出槽物品
+        for (int i = 0; i < outputHandler.getSlots(); i++) {
+            spawnItemStack(world, pos, outputHandler.getStackInSlot(i));
+        }
+        // 掉落处理中槽位的原料
+        for (ProcessSlot slot : processSlots) {
+            if (!slot.input.isEmpty()) {
+                spawnItemStack(world, pos, slot.input);
+            }
+        }
+    }
+
+    /** 将单个 ItemStack 以掉落物实体形式生成在世界中（带随机偏移） */
+    private void spawnItemStack(World world, BlockPos pos, ItemStack stack) {
+        if (stack.isEmpty()) return;
+        double offsetX = world.rand.nextFloat() * 0.5 + 0.25;
+        double offsetY = world.rand.nextFloat() * 0.5 + 0.25;
+        double offsetZ = world.rand.nextFloat() * 0.5 + 0.25;
+        EntityItem entity = new EntityItem(world,
+                pos.getX() + offsetX, pos.getY() + offsetY, pos.getZ() + offsetZ, stack);
+        entity.motionX = world.rand.nextGaussian() * 0.05;
+        entity.motionY = world.rand.nextGaussian() * 0.05 + 0.2;
+        entity.motionZ = world.rand.nextGaussian() * 0.05;
+        world.spawnEntity(entity);
     }
 
     // 供外部（GUI）查询进度

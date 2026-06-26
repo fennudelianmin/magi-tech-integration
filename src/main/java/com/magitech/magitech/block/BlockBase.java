@@ -1,11 +1,13 @@
 package com.magitech.magitech.block;
 
 import com.magitech.magitech.creativetab.MagiTechTab;
+import com.magitech.magitech.tile.IDroppableInventory;
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
@@ -40,6 +42,23 @@ public class BlockBase extends Block {
             return tileEntitySupplier.get();
         }
         return null;
+    }
+
+    /**
+     * 方块被破坏时调用。
+     * 如果该方块对应的 TileEntity 实现了 IDroppableInventory 接口，
+     * 则自动将内部所有物品以掉落物形式弹出到世界中，
+     * 避免玩家因破坏机器而损失内部物品。
+     */
+    @Override
+    public void breakBlock(World world, BlockPos pos, IBlockState state) {
+        if (!world.isRemote) {
+            TileEntity tileEntity = world.getTileEntity(pos);
+            if (tileEntity instanceof IDroppableInventory) {
+                ((IDroppableInventory) tileEntity).dropItems(world, pos);
+            }
+        }
+        super.breakBlock(world, pos, state);
     }
 
     @Override

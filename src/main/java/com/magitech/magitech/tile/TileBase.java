@@ -1,9 +1,13 @@
 package com.magitech.magitech.tile;
 
+import net.minecraft.entity.item.EntityItem;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.energy.EnergyStorage;
@@ -20,7 +24,7 @@ import javax.annotation.Nullable;
  * <p>
  * 子类只需关注自身的机器逻辑，无需重复处理物品/能量的 Capability 注册和序列化。
  */
-public abstract class TileBase extends TileEntity implements ITickable {
+public abstract class TileBase extends TileEntity implements ITickable, IDroppableInventory {
 
     /** 通用物品栏处理器，前半部分为输入槽，后半部分为输出槽 */
     protected final ItemStackHandler itemHandler;
@@ -118,6 +122,28 @@ public abstract class TileBase extends TileEntity implements ITickable {
         T customCap = getCustomCapability(capability, facing);
         if (customCap != null) return customCap;
         return super.getCapability(capability, facing);
+    }
+
+    /**
+     * 将物品栏中所有物品以掉落物形式弹出到世界中。
+     * 每个物品生成时带有随机偏移和随机速度，模拟自然掉落效果。
+     */
+    @Override
+    public void dropItems(World world, BlockPos pos) {
+        for (int i = 0; i < itemHandler.getSlots(); i++) {
+            ItemStack stack = itemHandler.getStackInSlot(i);
+            if (!stack.isEmpty()) {
+                double offsetX = world.rand.nextFloat() * 0.5 + 0.25;
+                double offsetY = world.rand.nextFloat() * 0.5 + 0.25;
+                double offsetZ = world.rand.nextFloat() * 0.5 + 0.25;
+                EntityItem entity = new EntityItem(world,
+                        pos.getX() + offsetX, pos.getY() + offsetY, pos.getZ() + offsetZ, stack);
+                entity.motionX = world.rand.nextGaussian() * 0.05;
+                entity.motionY = world.rand.nextGaussian() * 0.05 + 0.2;
+                entity.motionZ = world.rand.nextGaussian() * 0.05;
+                world.spawnEntity(entity);
+            }
+        }
     }
 
     /** 子类可覆写以声明额外的 Capability 类型 */
