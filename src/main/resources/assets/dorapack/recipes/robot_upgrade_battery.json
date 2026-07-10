@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:redstone" },
+    { "item": "ic2:itembatre" }
+  ],
+  "result": { "item": "dorapack:robot_upgrade", "data": 0 }
+}

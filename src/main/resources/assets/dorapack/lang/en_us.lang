@@ -1,0 +1,47 @@
+itemGroup.dorapack=Doraemon's Pocket
+
+item.bamboo_copter.name=Bamboo Copter
+item.mini_air_cannon.name=Mini Air Cannon
+item.bag_initial.name=Four-Dimensional Pocket
+item.tame_food.name=Taming Food
+item.headlamp.name=Headlamp
+item.air_cannon.name=Air Cannon
+item.time_wrap.name=Time Kerchief
+item.translate_jelly.name=Translation Jelly
+item.memory_bread.name=Memory Bread
+item.emergency_pill.name=Emergency Pill
+item.exp_bottle.name=Experience Bottle
+item.momotaro_flute.name=Momotaro Flute
+item.miner_drill.name=Miner Drill
+item.invis_cloak.name=Invisibility Cloak
+item.bag_upgrade.name=Pocket Upgrade
+item.giant_air_cannon.name=Giant Air Cannon
+item.rocket_booster.name=Rocket Booster
+item.weather_controller.name=Weather Box
+item.time_stop_watch.name=Time Stopwatch
+item.mining_robot.name=Mining Robot
+item.become_doraemon.name=I Want to Be Doraemon
+item.wisdom_king.name=King of Wisdom
+item.dimension_shard.name=Four-Dimensional Shard
+item.dimension_core.name=Four-Dimensional Core
+
+item.robot_upgrade.battery.name=Robot Module: Battery
+item.robot_upgrade.storage.name=Robot Module: Storage
+item.robot_upgrade.fortune.name=Robot Module: Fortune
+item.robot_upgrade.smelting.name=Robot Module: Smelting
+item.robot_upgrade.whitelist.name=Robot Module: Whitelist
+item.robot_upgrade.ore_scanner.name=Robot Module: Ore Scanner
+item.robot_upgrade.energy_saver.name=Robot Module: Energy Saver
+item.robot_upgrade.speed.name=Robot Module: Speed
+item.robot_upgrade.dig_speed.name=Robot Module: Efficiency
+
+tile.anywhere_door.name=Anywhere Door
+tile.research_table_sprout.name=Research Table (Sprout)
+tile.research_table_endgame.name=Research Table (Endgame)
+tile.charging_station.name=Charging Station
+tile.shrink_gate_large.name=Shrink Tunnel (Large Mouth)
+tile.shrink_gate_small.name=Shrink Tunnel (Small Mouth)
+tile.door_hub_core.name=Door Network Core
+
+entity.dorapack.fairy.name=Momotaro Fairy
+entity.dorapack.mining_robot.name=Mining Robot

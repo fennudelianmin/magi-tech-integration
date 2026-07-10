@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:clock" },
+    { "item": "minecraft:ender_eye" },
+    { "item": "dorapack:dimension_shard" },
+    { "item": "dorapack:dimension_shard" }
+  ],
+  "result": { "item": "dorapack:time_stop_watch" }
+}

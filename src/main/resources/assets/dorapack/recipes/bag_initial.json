@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["LLL", "LSL", "LLL"],
+  "key": {
+    "L": { "item": "minecraft:leather" },
+    "S": { "item": "minecraft:string" }
+  },
+  "result": { "item": "dorapack:bag_initial" }
+}

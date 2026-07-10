@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["CGC", "G G", "CGC"],
+  "key": {
+    "C": { "item": "minecraft:cobblestone" },
+    "G": { "item": "minecraft:glass" }
+  },
+  "result": { "item": "dorapack:shrink_gate_large", "count": 2 }
+}

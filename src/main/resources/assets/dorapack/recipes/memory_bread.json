@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:bread" },
+    { "item": "minecraft:dye", "data": 0 }
+  ],
+  "result": { "item": "dorapack:memory_bread" }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:spider_eye" },
+    { "item": "minecraft:sugar" },
+    { "item": "minecraft:red_mushroom" }
+  ],
+  "result": { "item": "dorapack:emergency_pill" }
+}

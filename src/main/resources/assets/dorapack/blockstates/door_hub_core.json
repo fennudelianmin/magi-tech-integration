@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "normal": { "model": "dorapack:door_hub_core" }
+  }
+}

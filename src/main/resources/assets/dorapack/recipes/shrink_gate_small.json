@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["CBC", "B B", "CBC"],
+  "key": {
+    "C": { "item": "minecraft:cobblestone" },
+    "B": { "item": "minecraft:iron_bars" }
+  },
+  "result": { "item": "dorapack:shrink_gate_small", "count": 2 }
+}

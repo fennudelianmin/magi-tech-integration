@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "dorapack:dimension_shard" },
+    { "item": "minecraft:diamond" }
+  ],
+  "result": { "item": "dorapack:robot_upgrade", "data": 2 }
+}

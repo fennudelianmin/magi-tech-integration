@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["ITI", "TIT", "ITI"],
+  "key": {
+    "I": { "item": "minecraft:iron_ingot" },
+    "T": { "item": "minecraft:torch" }
+  },
+  "result": { "item": "dorapack:headlamp" }
+}

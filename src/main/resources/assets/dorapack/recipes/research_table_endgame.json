@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "dorapack:research_table_sprout" },
+    { "item": "dorapack:dimension_core" }
+  ],
+  "result": { "item": "dorapack:research_table_endgame" }
+}

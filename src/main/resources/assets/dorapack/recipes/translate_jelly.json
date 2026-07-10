@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:cake" },
+    { "item": "minecraft:red_mushroom" }
+  ],
+  "result": { "item": "dorapack:translate_jelly" }
+}

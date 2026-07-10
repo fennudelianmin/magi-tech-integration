@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "ic2:itemtooldrill" },
+    { "item": "dorapack:dimension_shard" }
+  ],
+  "result": { "item": "dorapack:miner_drill" }
+}

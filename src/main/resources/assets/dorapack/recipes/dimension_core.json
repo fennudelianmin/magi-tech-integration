@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["SES", "EDE", "SES"],
+  "key": {
+    "S": { "item": "dorapack:dimension_shard" },
+    "E": { "item": "minecraft:ender_eye" },
+    "D": { "item": "minecraft:diamond" }
+  },
+  "result": { "item": "dorapack:dimension_core" }
+}

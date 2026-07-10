@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:stick" },
+    { "item": "minecraft:redstone" },
+    { "item": "minecraft:feather" }
+  ],
+  "result": { "item": "dorapack:mini_air_cannon" }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "F",
+    "S",
+    "T"
+  ],
+  "key": {
+    "F": { "item": "minecraft:feather" },
+    "S": { "item": "minecraft:stick" },
+    "T": { "item": "minecraft:string" }
+  },
+  "result": { "item": "dorapack:bamboo_copter" }
+}

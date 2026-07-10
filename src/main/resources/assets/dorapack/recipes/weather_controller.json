@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:nether_star" },
+    { "item": "minecraft:wool", "data": 0 },
+    { "item": "minecraft:redstone" }
+  ],
+  "result": { "item": "dorapack:weather_controller" }
+}

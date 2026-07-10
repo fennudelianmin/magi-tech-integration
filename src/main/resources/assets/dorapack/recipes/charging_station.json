@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "ic2:te", "data": 8 },
+    { "item": "dorapack:dimension_shard" },
+    { "item": "dorapack:dimension_shard" }
+  ],
+  "result": { "item": "dorapack:charging_station" }
+}
